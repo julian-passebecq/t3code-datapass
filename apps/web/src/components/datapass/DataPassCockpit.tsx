@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import {DevelopmentAtlas} from './DevelopmentAtlas';
 import { Link } from "@tanstack/react-router";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -222,6 +223,7 @@ export function DataPassCockpit() {
           ) : null}
         </section>
         <section className="flex flex-col gap-3 rounded-lg border p-4">
+          <DevelopmentAtlas />
           <h2 className="font-semibold">Shared knowledge</h2>
           <p className="text-sm text-muted-foreground">
             Import cockpit.json from selected Codex / Claude conversations, ChatGPT exports, feature
@@ -388,3 +390,4 @@ export function DataPassCockpit() {
     </SidebarInset>
   );
 }
+

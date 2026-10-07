@@ -1,0 +1,10 @@
+{
+  "owner": "DiagramCloud",
+  "sourceSha": "c5ab19cee2373d3b05c29f59afec45b41ecf4f94",
+  "entries": [
+    "src/development/index.ts",
+    "src/core/layout.ts",
+    "src/export/scene.ts",
+    "src/export/design/architecture.ts"
+  ]
+}

@@ -8,7 +8,7 @@ export function createSuperLensAdapter(core) {
       if(!Array.isArray(roots)||roots.length>20)throw Error('Choose at most 20 repository roots');
       const snapshot=await service.refresh(name,roots,0,40);
       await service.loadChangeSets(snapshot);
-      return core.lensEnvelope({snapshot,minimap:core.minimapProjection(snapshot),impact:core.impactSamples(snapshot,{}),evolution:core.timeline(snapshot)});
+      return core.lensEnvelope({snapshot,atlas:core.buildDevelopmentAtlas?.(snapshot,{project:name,worktree:roots[0]}),minimap:core.minimapProjection(snapshot),impact:core.impactSamples(snapshot,{}),evolution:core.timeline(snapshot)});
     },
     dispose:()=>service.dispose(),
   };
