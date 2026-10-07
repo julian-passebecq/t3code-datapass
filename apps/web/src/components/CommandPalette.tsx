@@ -2228,6 +2228,15 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push({
     kind: "action",
+    value: "action:datapass",
+    searchTerms: ["datapass", "cockpit", "brain", "knowledge", "conversations", "export", "reconcile"],
+    title: "Open DataPass cockpit",
+    icon: <FileSearchIcon className={ITEM_ICON_CLASS} />,
+    run: async () => { await navigate({ to: "/datapass" }); },
+  });
+
+  actionItems.push({
+    kind: "action",
     value: "action:settings",
     searchTerms: ["settings", "preferences", "configuration", "keybindings"],
     title: "Open settings",

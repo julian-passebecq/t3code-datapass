@@ -1,4 +1,5 @@
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
+import { Link } from "@tanstack/react-router";
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -1523,6 +1524,10 @@ export function IntegrationsSettingsPanel() {
       {/* Server-authoritative agent access is scoped by the header selection;
           the preview defaults below are device-local and ignore it. */}
       <ProjectDefaultsSettings category="integrations" />
+      <SettingsSection id="datapass" title="DataPass knowledge">
+        <p className="text-sm text-muted-foreground">Review selected conversation exports, feature CSVs and durable Mongo snapshots alongside live T3 work.</p>
+        <div className="mt-3"><Button variant="outline" render={<Link to="/datapass" />}>Open DataPass cockpit</Button></div>
+      </SettingsSection>
       <SettingsSection id="browser" title="Browser">
         {previewDefaultsDisabled ? (
           <SettingsUnavailableGroup message="Only available in the desktop app.">

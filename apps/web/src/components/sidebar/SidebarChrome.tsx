@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon, LibraryIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -212,6 +212,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         </SidebarMenuItem>
       ) : (
         <>
+          <SidebarUtilityItem icon={<LibraryIcon />} label="DataPass cockpit" onClick={() => {
+            closeMobileSidebar();
+            void navigate({ to: "/datapass" });
+          }} />
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
