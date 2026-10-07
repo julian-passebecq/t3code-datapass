@@ -14,6 +14,9 @@ import {
   searchKnowledge,
 } from "../../datapass/bundle";
 import { useKnowledgeStore } from "../../datapass/store";
+import {useNewThreadHandler} from '../../hooks/useHandleNewThread';
+import {scopeProjectRef} from '@t3tools/client-runtime/environment';
+import {incomingEditorContext,contextEditorLink,sameCheckout} from '../../datapass/editorContext';
 
 function savePack(text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -26,6 +29,11 @@ function savePack(text: string) {
 }
 
 export function DataPassCockpit() {
+  const editorContext=new URLSearchParams(window.location.search);
+  const incoming=incomingEditorContext(window.location.search),pointer=incoming.pointer;
+  const selectedPath=pointer?.worktreePath??pointer?.repository?.path;
+  const editorProject=editorContext.get('editorProject'),editorEnvironment=editorContext.get('editorEnvironment');
+  const createThread=useNewThreadHandler();
   const allProjects = useProjects(),
     allThreads = useThreadShells();
   const { environments, isReady } = useEnvironments();
@@ -34,8 +42,8 @@ export function DataPassCockpit() {
       .filter((environment) => environment.connection.phase === "connected")
       .map((environment) => environment.environmentId),
   );
-  const projects = allProjects.filter((project) => connected.has(project.environmentId));
-  const threads = allThreads.filter((thread) => connected.has(thread.environmentId));
+  const projects = allProjects.filter((project) => connected.has(project.environmentId)&&(!editorProject||project.id===editorProject)&&(!editorEnvironment||project.environmentId===editorEnvironment)&&(!selectedPath||sameCheckout(project.workspaceRoot,selectedPath)||allThreads.some(t=>t.projectId===project.id&&t.environmentId===project.environmentId&&sameCheckout(t.worktreePath,selectedPath))));
+  const threads = allThreads.filter((thread) => connected.has(thread.environmentId)&&(!editorProject||thread.projectId===editorProject)&&(!editorEnvironment||thread.environmentId===editorEnvironment)&&(!selectedPath||sameCheckout(thread.worktreePath??allProjects.find(p=>p.id===thread.projectId&&p.environmentId===thread.environmentId)?.workspaceRoot,selectedPath)));
   const bundles = useKnowledgeStore((state) => state.bundles);
   const add = useKnowledgeStore((state) => state.add),
     clear = useKnowledgeStore((state) => state.clear);
@@ -177,6 +185,8 @@ export function DataPassCockpit() {
         </section>
         <section className="rounded-lg border p-4">
           <h2 className="font-semibold">Project map</h2>
+          {incoming.error?<p role="alert">{incoming.error}</p>:null}
+          {pointer?<div className="mb-3 min-w-0 rounded border p-3"><strong>Editor change context</strong><p className="break-all text-sm">{selectedPath??pointer.repository?.remote} · {pointer.branch??'Branch unknown'} · {pointer.revision??'Revision unknown'}</p><p className="text-xs text-muted-foreground">Navigation pointer only. Resolve current Git facts in Lens. Paste copied context into a T3 thread for explicit submission.</p><Button variant="outline" onClick={()=>void navigator.clipboard.writeText(JSON.stringify(pointer,null,2))}>Copy change context</Button>{incoming.editorScheme?<Button variant="outline" onClick={()=>{window.location.href=contextEditorLink(pointer,incoming.editorScheme!);}}>Open in Lens</Button>:<p className="text-xs">Open in your editor using Lens: Open Development Context.</p>}{selectedPath&&!projects.length?<p>No connected T3 project matches this checkout.</p>:null}</div>:null}
           <p className="mb-3 text-sm text-muted-foreground">
             These projects come from connected T3 environments. Existing source-control screens
             manage their repositories and remote reviews.
@@ -189,6 +199,7 @@ export function DataPassCockpit() {
               >
                 <strong>{project.title}</strong>
                 <p className="break-all text-xs text-muted-foreground">{project.workspaceRoot}</p>
+                {editorContext.get('editorAction')==='new-thread' ? <Button variant="outline" onClick={()=>void createThread(scopeProjectRef(project.environmentId,project.id),{worktreePath:editorContext.get('editorWorktree')||null,branch:editorContext.get('editorBranch')||null})}>Create new thread in this checkout</Button> : null}
                 <p className="text-sm">
                   {
                     threads.filter(

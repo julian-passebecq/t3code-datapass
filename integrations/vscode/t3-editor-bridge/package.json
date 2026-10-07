@@ -1,0 +1,32 @@
+{
+  "name":"t3-editor-bridge","displayName":"T3 Editor Bridge","version":"0.1.0","publisher":"juliandatapass","license":"MIT",
+  "description":"Compact project, thread, worktree and pending-input context from your T3 environment.",
+  "repository":{"type":"git","url":"https://github.com/julian-passebecq/t3code-datapass"},
+  "engines":{"vscode":"^1.95.0"},"categories":["Other"],"main":"dist/extension.js",
+  "capabilities":{"untrustedWorkspaces":{"supported":false},"virtualWorkspaces":false},
+  "activationEvents":["onView:t3.context"],
+  "contributes":{
+    "viewsContainers":{"activitybar":[{"id":"t3Editor","title":"T3","icon":"media/t3.svg"}]},
+    "views":{"t3Editor":[{"id":"t3.context","name":"T3 Context"}]},
+    "commands":[
+      {"command":"t3.refresh","title":"T3: Refresh Editor Context","icon":"$(refresh)"},
+      {"command":"t3.connect","title":"T3: Pair Editor Bridge"},
+      {"command":"t3.disconnect","title":"T3: Forget Editor Credential"},
+      {"command":"t3.openCockpit","title":"T3: Open Cockpit"},
+      {"command":"t3.openCurrentProject","title":"T3: Open Current Project"},
+      {"command":"t3.openThread","title":"T3: Open Thread"},
+      {"command":"t3.openWorktree","title":"T3: Open Worktree in Editor"},
+      {"command":"t3.openReview","title":"T3: Open PR / MR"},
+      {"command":"t3.newThread","title":"T3: Start New Thread for Workspace (Open Project)"},
+      {"command":"t3.sendSelection","title":"T3: Send Selection (Copy and Open Thread)"},
+      {"command":"t3.openGitIntelligence","title":"T3: Open Git Intelligence"},
+      {"command":"t3.openAgent","title":"T3: Open Agent Observation"}
+    ],
+    "menus":{"view/title":[{"command":"t3.refresh","when":"view == t3.context","group":"navigation"}]},
+    "configuration":{"title":"T3 Editor Bridge","properties":{
+      "t3Editor.serverUrl":{"type":"string","default":"","description":"T3 environment origin, e.g. the origin printed by start-datapass.ps1. No credentials or URL query."}
+    }}
+  },
+  "scripts":{"check":"tsc --noEmit","build":"node scripts/build.mjs","test":"node --import tsx --test test/*.test.ts","package":"npm run build && vsce package --no-dependencies"},
+  "devDependencies":{"@types/node":"^22.19.0","@types/vscode":"^1.95.0","typescript":"^5.9.3","esbuild":"^0.25.11","tsx":"^4.20.6","@vscode/vsce":"^3.7.1"}
+}
