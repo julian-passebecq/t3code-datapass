@@ -93,23 +93,31 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
     [cwd, environmentId, inspectClient],
   );
 
-  const loadProject = useCallback(async () => {
-    const result = await inspect({ environmentId, input: { cwd } });
-    if (result._tag !== "Success") {
-      setProjectError(failureMessage(result));
-      return;
-    }
-    setProjectError(null);
-    const value = result.value;
-    setProject(value);
-    if (value._tag !== "Mosaic") return;
-    const keep = selectedRef.current;
-    const nextId =
-      keep !== null && value.clients.some((client) => client.id === keep)
-        ? keep
-        : (value.clients[0]?.id ?? null);
-    if (nextId !== null) await selectClient(nextId);
-  }, [cwd, environmentId, inspect, selectClient]);
+  const applyProject = useCallback(
+    async (result: Awaited<ReturnType<typeof inspect>>) => {
+      if (result._tag !== "Success") {
+        setProjectError(failureMessage(result));
+        return;
+      }
+      setProjectError(null);
+      const value = result.value;
+      setProject(value);
+      if (value._tag !== "Mosaic") return;
+      const keep = selectedRef.current;
+      const nextId =
+        keep !== null && value.clients.some((client) => client.id === keep)
+          ? keep
+          : (value.clients[0]?.id ?? null);
+      if (nextId !== null) await selectClient(nextId);
+    },
+    [selectClient],
+  );
+
+  // State is only set once the inspect response arrives, never synchronously in the effect.
+  const loadProject = useCallback(
+    () => inspect({ environmentId, input: { cwd } }).then(applyProject),
+    [cwd, environmentId, inspect, applyProject],
+  );
 
   // Waits for the environment and reloads when it reconnects, e.g. after a server restart.
   const connected = useConnectedEnvironmentIds().includes(environmentId);
