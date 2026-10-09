@@ -338,6 +338,16 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  MosaicBuildReceipt,
+  MosaicClientInput,
+  MosaicCompareInput,
+  MosaicCompareResult,
+  MosaicError,
+  MosaicInspectInput,
+  MosaicInspectResult,
+  MosaicPreviewResult,
+} from "./mosaic.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 
 export const WS_METHODS = {
@@ -411,6 +421,13 @@ export const WS_METHODS = {
   terminalClear: "terminal.clear",
   terminalRestart: "terminal.restart",
   terminalClose: "terminal.close",
+
+  // Mosaic authoring methods
+  mosaicInspect: "mosaic.inspect",
+  mosaicInspectClient: "mosaic.inspectClient",
+  mosaicBuild: "mosaic.build",
+  mosaicOpenPreview: "mosaic.openPreview",
+  mosaicCompare: "mosaic.compare",
 
   // Preview methods
   previewOpen: "preview.open",
@@ -1377,6 +1394,36 @@ const WsTerminalCloseRpc = Rpc.make(WS_METHODS.terminalClose, {
   error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
 });
 
+const WsMosaicInspectRpc = Rpc.make(WS_METHODS.mosaicInspect, {
+  payload: MosaicInspectInput,
+  success: MosaicInspectResult,
+  error: Schema.Union([MosaicError, EnvironmentAuthorizationError]),
+});
+
+const WsMosaicInspectClientRpc = Rpc.make(WS_METHODS.mosaicInspectClient, {
+  payload: MosaicClientInput,
+  success: MosaicBuildReceipt,
+  error: Schema.Union([MosaicError, EnvironmentAuthorizationError]),
+});
+
+const WsMosaicBuildRpc = Rpc.make(WS_METHODS.mosaicBuild, {
+  payload: MosaicClientInput,
+  success: MosaicBuildReceipt,
+  error: Schema.Union([MosaicError, EnvironmentAuthorizationError]),
+});
+
+const WsMosaicOpenPreviewRpc = Rpc.make(WS_METHODS.mosaicOpenPreview, {
+  payload: MosaicClientInput,
+  success: MosaicPreviewResult,
+  error: Schema.Union([MosaicError, EnvironmentAuthorizationError]),
+});
+
+const WsMosaicCompareRpc = Rpc.make(WS_METHODS.mosaicCompare, {
+  payload: MosaicCompareInput,
+  success: MosaicCompareResult,
+  error: Schema.Union([MosaicError, EnvironmentAuthorizationError]),
+});
+
 const WsPreviewOpenRpc = Rpc.make(WS_METHODS.previewOpen, {
   payload: PreviewOpenInput,
   success: PreviewSessionSnapshot,
@@ -1873,6 +1920,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsTerminalCloseRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
+  WsMosaicInspectRpc,
+  WsMosaicInspectClientRpc,
+  WsMosaicBuildRpc,
+  WsMosaicOpenPreviewRpc,
+  WsMosaicCompareRpc,
   WsPreviewOpenRpc,
   WsPreviewNavigateRpc,
   WsPreviewResizeRpc,

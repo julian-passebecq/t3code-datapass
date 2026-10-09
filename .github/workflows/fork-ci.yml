@@ -1,0 +1,53 @@
+# Fork-only CI for julian-passebecq/t3code-datapass.
+# Upstream ci.yml runs on Blacksmith runners that this fork cannot use, so this
+# workflow checks the packages the Mosaic feature touches on GitHub-hosted runners.
+name: Fork CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Fork CI (server, web, contracts)
+    if: github.repository == 'julian-passebecq/t3code-datapass'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Typecheck
+        run: vp run --filter t3 --filter @t3tools/web --filter @t3tools/contracts typecheck
+
+      - name: Lint
+        run: vp lint --report-unused-disable-directives apps/server apps/web packages/contracts
+
+      # Server preview tests launch headless Chromium (same install as upstream ci.yml).
+      - name: Install Playwright Chromium
+        run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+
+      - name: Test
+        run: vp run --filter t3 --filter @t3tools/web --filter @t3tools/contracts test
