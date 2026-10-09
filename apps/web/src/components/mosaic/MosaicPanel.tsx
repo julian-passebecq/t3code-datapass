@@ -10,13 +10,14 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { Hammer, MonitorPlay, RefreshCw, Shapes } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { openUrlInPreview } from "~/browser/openFileInPreview";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Spinner } from "~/components/ui/spinner";
+import { useConnectedEnvironmentIds } from "~/state/environments";
 import { mosaicEnvironment } from "~/state/mosaic";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -52,6 +53,9 @@ interface MosaicPanelProps {
  * script, shows what the output was built from, and opens it in the preview
  * browser on an origin of its own.
  */
+// The panel unmounts when another right-panel tab is shown; keep the choice per checkout.
+const lastClientByCwd = new Map<string, string>();
+
 export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
   const environmentId = threadRef.environmentId;
   const inspect = useAtomCommand(mosaicEnvironment.inspect, QUIET);
@@ -70,44 +74,50 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // The latest selection, so slower responses for an earlier one are dropped.
+  const selectedRef = useRef<string | null>(lastClientByCwd.get(cwd) ?? null);
+
   const selectClient = useCallback(
     async (id: string) => {
+      selectedRef.current = id;
+      lastClientByCwd.set(cwd, id);
       setClientId(id);
       setReceipt(null);
       setComparison(null);
       setActionError(null);
       const result = await inspectClient({ environmentId, input: { cwd, clientId: id } });
+      if (selectedRef.current !== id) return;
       if (result._tag === "Success") setReceipt(result.value);
       else setActionError(failureMessage(result));
     },
     [cwd, environmentId, inspectClient],
   );
 
-  const loadProject = useCallback(
-    async (keepClientId: string | null) => {
-      const result = await inspect({ environmentId, input: { cwd } });
-      if (result._tag !== "Success") {
-        setProjectError(failureMessage(result));
-        return;
-      }
-      setProjectError(null);
-      const value = result.value;
-      setProject(value);
-      if (value._tag !== "Mosaic") return;
-      const nextId =
-        keepClientId !== null && value.clients.some((client) => client.id === keepClientId)
-          ? keepClientId
-          : (value.clients[0]?.id ?? null);
-      if (nextId !== null) await selectClient(nextId);
-    },
-    [cwd, environmentId, inspect, selectClient],
-  );
+  const loadProject = useCallback(async () => {
+    const result = await inspect({ environmentId, input: { cwd } });
+    if (result._tag !== "Success") {
+      setProjectError(failureMessage(result));
+      return;
+    }
+    setProjectError(null);
+    const value = result.value;
+    setProject(value);
+    if (value._tag !== "Mosaic") return;
+    const keep = selectedRef.current;
+    const nextId =
+      keep !== null && value.clients.some((client) => client.id === keep)
+        ? keep
+        : (value.clients[0]?.id ?? null);
+    if (nextId !== null) await selectClient(nextId);
+  }, [cwd, environmentId, inspect, selectClient]);
 
+  // Waits for the environment and reloads when it reconnects, e.g. after a server restart.
+  const connected = useConnectedEnvironmentIds().includes(environmentId);
   useEffect(() => {
-    void loadProject(null);
-  }, [loadProject]);
+    if (connected) void loadProject();
+  }, [connected, loadProject]);
 
-  const refresh = () => void loadProject(clientId);
+  const refresh = () => void loadProject();
 
   const run = useCallback(
     async <A,>(
@@ -165,6 +175,16 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
             setReceipt(value.base);
           },
         );
+
+  if (!connected) {
+    return (
+      <PanelFrame onRefresh={refresh}>
+        <div className="flex items-center gap-2 p-4 text-muted-foreground text-sm">
+          <Spinner /> Waiting for the environment to connect…
+        </div>
+      </PanelFrame>
+    );
+  }
 
   if (project === null) {
     return (
@@ -239,7 +259,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
             </div>
           )
         ) : (
-          <ReceiptView receipt={receipt}>
+          <ReceiptView receipt={receipt} building={busy === `build:${cwd}`}>
             <div className="flex flex-wrap gap-2">
               <Button
                 size="compact"
@@ -318,7 +338,11 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
                   ))}
                 </ul>
               )}
-              <ReceiptView receipt={comparison.other} title="Other variant">
+              <ReceiptView
+                receipt={comparison.other}
+                title="Other variant"
+                building={busy === `build:${otherCwd}`}
+              >
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="compact"
@@ -376,10 +400,12 @@ function PanelFrame(props: { readonly onRefresh: () => void; readonly children: 
 function ReceiptView(props: {
   readonly receipt: MosaicBuildReceipt;
   readonly title?: string;
+  /** A build this panel started is running; the receipt predates it. */
+  readonly building?: boolean;
   readonly children?: ReactNode;
 }) {
   const { receipt } = props;
-  const status = MOSAIC_STATUS_PRESENTATION[receipt.status];
+  const status = MOSAIC_STATUS_PRESENTATION[props.building ? "building" : receipt.status];
   return (
     <section aria-label={props.title ?? "Build"} className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">

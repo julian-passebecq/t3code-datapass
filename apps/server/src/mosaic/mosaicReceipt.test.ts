@@ -149,6 +149,11 @@ describe("extractClientTitle", () => {
     expect(
       extractClientTitle("export default defineApp({manifest:{id:'demo', title: 'Demo lab'}})"),
     ).toBe("Demo lab");
+    expect(
+      extractClientTitle(
+        "const views = [{id:'curve',title:'Curve'}];\nexport default defineApp({manifest:{id:'f', title:'Foundation'}})",
+      ),
+    ).toBe("Foundation");
     expect(extractClientTitle("export default defineApp({})")).toBeNull();
   });
 });

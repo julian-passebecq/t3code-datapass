@@ -115,7 +115,11 @@ export const runFailed = (run: MosaicBuildRun) => run.timedOut || run.exitCode !
 
 /** Reads the client title from `defineApp({manifest: {title: '...'}})` without running it. */
 export function extractClientTitle(appSource: string): string | null {
-  const match = /\btitle\s*:\s*(['"`])((?:(?!\1).){1,120})\1/.exec(appSource);
+  // Representations declared above the manifest carry titles of their own.
+  const manifestAt = appSource.search(/\bmanifest\s*:/);
+  const match = /\btitle\s*:\s*(['"`])((?:(?!\1).){1,120})\1/.exec(
+    manifestAt === -1 ? appSource : appSource.slice(manifestAt),
+  );
   return match?.[2] ?? null;
 }
 

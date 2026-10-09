@@ -1959,8 +1959,14 @@ function OpenCommandPaletteDialog(props: {
     }
   }
 
-  if (activeThread !== null) {
-    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+  const mosaicThreadRef =
+    activeThread !== null
+      ? scopeThreadRef(activeThread.environmentId, activeThread.id)
+      : activeDraftThread
+        ? scopeThreadRef(activeDraftThread.environmentId, activeDraftThread.threadId)
+        : null;
+  if (mosaicThreadRef !== null) {
+    const threadRef = mosaicThreadRef;
     actionItems.push({
       kind: "action",
       value: "action:open-mosaic",
