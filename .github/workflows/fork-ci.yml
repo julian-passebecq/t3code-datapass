@@ -45,5 +45,9 @@ jobs:
       - name: Lint
         run: vp lint --report-unused-disable-directives apps/server apps/web packages/contracts
 
+      # Server preview tests launch headless Chromium (same install as upstream ci.yml).
+      - name: Install Playwright Chromium
+        run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+
       - name: Test
         run: vp run --filter t3 --filter @t3tools/web --filter @t3tools/contracts test
