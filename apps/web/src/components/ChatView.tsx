@@ -692,6 +692,7 @@ const DevicePanel = lazy(() =>
   import("./device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+const MosaicPanel = lazy(() => import("./mosaic/MosaicPanel"));
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
@@ -10805,6 +10806,14 @@ export default function ChatView(props: ChatViewProps) {
             pendingFileSurfaceIds.has(renderedRightPanelSurface.id)
           }
           workspaceMutationId={workspaceMutationId}
+        />
+      </Suspense>
+    ) : renderedRightPanelSurface?.kind === "mosaic" && activeThreadRef && activeWorkspaceRoot ? (
+      <Suspense fallback={null}>
+        <MosaicPanel
+          key={`${activeThread.environmentId}:${activeWorkspaceRoot}`}
+          threadRef={activeThreadRef}
+          cwd={activeWorkspaceRoot}
         />
       </Suspense>
     ) : null

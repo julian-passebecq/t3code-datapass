@@ -68,6 +68,8 @@ import * as DesktopBrowserChannel from "./preview/DesktopBrowserChannel.ts";
 import * as ServerBrowserStream from "./preview/ServerBrowserStream.ts";
 import * as PreviewBrowser from "./preview/PreviewBrowser.ts";
 import * as ProcessRunner from "./processRunner.ts";
+import * as MosaicPreviewHost from "./mosaic/MosaicPreviewHost.ts";
+import * as MosaicStudio from "./mosaic/MosaicStudio.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -407,6 +409,11 @@ const layerWorkspaceFileSystem = WorkspaceFileSystem.layer.pipe(
   Layer.provide(layerWorkspaceEntries),
 );
 
+const layerMosaicStudio = MosaicStudio.layer.pipe(
+  Layer.provide(MosaicPreviewHost.layer),
+  Layer.provide(ProcessRunner.layer),
+);
+
 const layerWorkspace = Layer.mergeAll(
   WorkspacePaths.layer,
   layerWorkspaceEntries,
@@ -613,6 +620,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   // keeps a single Live for all opencode consumers.
   Layer.provideMerge(OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layer))),
   Layer.provideMerge(layerWorkspace),
+  Layer.provideMerge(layerMosaicStudio),
   Layer.provideMerge(ProjectEnrichmentService.layer),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, layerProjectFaviconResolver)),
   Layer.provideMerge(layerRepositoryIdentityResolver),

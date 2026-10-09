@@ -175,6 +175,12 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.vcsInit]: AuthOrchestrationOperateScope,
   [WS_METHODS.reviewGetDiffPreview]: AuthReviewWriteScope,
   [WS_METHODS.reviewGetDiffFileContents]: AuthReviewWriteScope,
+  [WS_METHODS.mosaicInspect]: AuthOrchestrationReadScope,
+  [WS_METHODS.mosaicInspectClient]: AuthOrchestrationReadScope,
+  [WS_METHODS.mosaicCompare]: AuthOrchestrationReadScope,
+  // Builds run the project's own build script, like a terminal command.
+  [WS_METHODS.mosaicBuild]: AuthTerminalOperateScope,
+  [WS_METHODS.mosaicOpenPreview]: AuthOrchestrationOperateScope,
   [WS_METHODS.terminalOpen]: AuthTerminalOperateScope,
   [WS_METHODS.terminalAttach]: AuthTerminalOperateScope,
   [WS_METHODS.terminalWrite]: AuthTerminalOperateScope,

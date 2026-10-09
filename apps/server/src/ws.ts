@@ -185,6 +185,7 @@ import { parseBase64DataUrl } from "./imageMime.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
+import * as MosaicStudio from "./mosaic/MosaicStudio.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
@@ -1277,6 +1278,7 @@ const layerWsRpc = (
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+      const mosaicStudio = yield* MosaicStudio.MosaicStudio;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -2861,6 +2863,11 @@ const layerWsRpc = (
               (unsubscribe) => Effect.sync(unsubscribe),
             ),
           ),
+        [WS_METHODS.mosaicInspect]: (input) => mosaicStudio.inspect(input),
+        [WS_METHODS.mosaicInspectClient]: (input) => mosaicStudio.inspectClient(input),
+        [WS_METHODS.mosaicBuild]: (input) => mosaicStudio.build(input),
+        [WS_METHODS.mosaicOpenPreview]: (input) => mosaicStudio.openPreview(input),
+        [WS_METHODS.mosaicCompare]: (input) => mosaicStudio.compare(input),
         [WS_METHODS.previewOpen]: (input) => previewManager.open(input),
         [WS_METHODS.previewNavigate]: (input) => previewManager.navigate(input),
         [WS_METHODS.previewResize]: (input) => previewManager.resize(input),

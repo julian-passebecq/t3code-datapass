@@ -64,6 +64,7 @@ import {
   SquarePenIcon,
   SunIcon,
   TextSearchIcon,
+  Shapes,
 } from "lucide-react";
 import {
   useCallback,
@@ -1956,6 +1957,20 @@ function OpenCommandPaletteDialog(props: {
         },
       });
     }
+  }
+
+  if (activeThread !== null) {
+    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    actionItems.push({
+      kind: "action",
+      value: "action:open-mosaic",
+      searchTerms: ["mosaic", "datapass", "client", "build", "preview", "variant", "compare"],
+      title: "Open Mosaic builds and previews",
+      icon: <Shapes className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        useRightPanelStore.getState().open(threadRef, "mosaic");
+      },
+    });
   }
 
   if (activeThread !== null) {

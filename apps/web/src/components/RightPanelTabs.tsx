@@ -23,6 +23,7 @@ import {
   Files,
   Globe2,
   Plus,
+  Shapes,
   TerminalSquare,
 } from "lucide-react";
 import { Volume2, VolumeOff } from "lucide";
@@ -588,6 +589,8 @@ function surfaceTitle(
       return "Diff";
     case "files":
       return "Files";
+    case "mosaic":
+      return "Mosaic";
     case "file":
       return surface.relativePath.slice(
         Math.max(surface.relativePath.lastIndexOf("/"), surface.relativePath.lastIndexOf("\\")) + 1,
@@ -663,6 +666,8 @@ function SurfaceIcon({
       return <FileDiff className="size-3 shrink-0" />;
     case "files":
       return <Files className="size-3 shrink-0" />;
+    case "mosaic":
+      return <Shapes className="size-3 shrink-0" />;
     case "file":
       return (
         <PierreEntryIcon
