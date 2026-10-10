@@ -1,6 +1,11 @@
 # Fork-only CI for julian-passebecq/t3code-datapass.
 # Upstream ci.yml runs on Blacksmith runners that this fork cannot use, so this
 # workflow checks the packages the Mosaic feature touches on GitHub-hosted runners.
+#
+# Rule: every job in an inherited upstream workflow starts its `if:` with
+# `github.repository == 'pingdotgg/t3code'`, so releases, deploys, publishing and
+# Blacksmith jobs skip here instead of queueing. Only this file runs in the fork.
+# scripts/fork-workflow-guards.ts enforces it (step "Workflow guards").
 name: Fork CI
 
 on:
@@ -38,6 +43,9 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
+
+      - name: Workflow guards
+        run: node scripts/fork-workflow-guards.ts
 
       - name: Typecheck
         run: vp run --filter t3 --filter @t3tools/web --filter @t3tools/contracts typecheck
