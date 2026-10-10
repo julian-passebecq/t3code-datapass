@@ -26,6 +26,7 @@ import {
   type MosaicPreviewResult,
   type MosaicArtifactSummary,
 } from "@t3tools/contracts";
+import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -53,6 +54,18 @@ import {
 
 const CLIENT_ID_PATTERN = /^[a-z][a-z0-9-]{0,59}$/;
 const BUILD_TIMEOUT = "15 minutes";
+
+/**
+ * The environment a client build runs in: the host's, minus T3's own
+ * `T3CODE_*` settings and any `VITE_*` value, which Vite would bake into the
+ * bundle. A build from T3 then matches the same build run from a terminal.
+ */
+export const mosaicBuildEnvironment = (hostEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
+  Object.fromEntries(
+    Object.keys(hostEnv)
+      .filter((name) => /^(T3CODE_|VITE_)/i.test(name))
+      .map((name) => [name, undefined]),
+  );
 const MAX_SOURCE_FILES = 20_000;
 const MAX_ARTIFACT_FILES = 50;
 const MAX_DIRTY_FILES = 200;
@@ -462,6 +475,7 @@ const make = Effect.gen(function* () {
           command: "npm",
           args,
           cwd,
+          env: mosaicBuildEnvironment(yield* HostProcessEnvironment),
           timeout: BUILD_TIMEOUT,
           timeoutBehavior: "timedOutResult",
           outputMode: "truncate",
