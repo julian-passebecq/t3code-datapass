@@ -12,9 +12,12 @@ worktree builds that worktree.
 - **Build** runs `npm run build:client -- <id>` in the checkout, exactly as you would from a
   terminal. It needs the same permission as opening a terminal.
 - **Open preview** serves `dist-clients/<id>` and opens it in the browser panel. Each output gets
-  its own local address, separate from T3 Code, so a preview cannot reach your session. It uses
-  the client's own `_headers` security policy, or a same-origin-only policy when there is none.
-  Reload the browser tab after a rebuild.
+  its own local address, separate from T3 Code. T3 Code refuses requests sent from a preview
+  page, and a preview cannot open connections, frames, form posts or popups to any other address,
+  so it cannot reach your session. The client's own `_headers` security policy applies on top and
+  can only tighten this; when there is none, a same-origin-only policy is used. Only files inside
+  the output folder are served; a symlink pointing outside it is not followed. Reload the browser tab
+  after a rebuild.
 - The build card shows the commit, uncommitted files, a hash of the output and the last build's
   result. **Stale** means sources changed after the build. A failed build cannot be previewed until
   a build succeeds, even if older output is still on disk.
