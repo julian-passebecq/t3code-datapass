@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - output hashing streams through node:crypto.
+// @effect-diagnostics nodeBuiltinImport:off - output hashing uses node:crypto; listing needs file types to refuse links.
 /**
  * MosaicStudio - optional authoring support for DataPass Mosaic checkouts.
  *
@@ -10,6 +10,7 @@
  * @module MosaicStudio
  */
 import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
 
 import {
   type MosaicBuildReceipt,
@@ -18,6 +19,7 @@ import {
   type MosaicClientSummary,
   type MosaicCompareInput,
   type MosaicCompareResult,
+  MOSAIC_PREVIEW_SPEC,
   MosaicError,
   type MosaicInspectInput,
   type MosaicInspectResult,
@@ -32,12 +34,15 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import * as MosaicPreviewHost from "./MosaicPreviewHost.ts";
 import { ProcessRunner } from "../processRunner.ts";
 import {
   MAX_ARTIFACT_BYTES,
+  type OutputFile,
   deriveBuildStatus,
+  deriveContract,
   extractClientTitle,
   logTail,
   parseWorktreeList,
@@ -52,6 +57,7 @@ const MAX_SOURCE_FILES = 20_000;
 const MAX_ARTIFACT_FILES = 50;
 const MAX_DIRTY_FILES = 200;
 const MAX_CHANGED_FILES = 500;
+const MAX_DESCRIPTOR_BYTES = 4 * 1024 * 1024;
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 const isoAt = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
 
@@ -213,27 +219,80 @@ const make = Effect.gen(function* () {
     return newest;
   });
 
-  /** Hashes every output file into one digest over `path\0sha256` lines, in path order. */
+  /** Streams a file through sha256 so large outputs are never held in memory. */
+  const hashFile = (absolute: string) =>
+    fileSystem.stream(absolute).pipe(
+      Stream.runFold(
+        () => ({ hash: NodeCrypto.createHash("sha256"), bytes: 0 }),
+        (state, chunk) => {
+          state.hash.update(chunk);
+          state.bytes += chunk.byteLength;
+          return state;
+        },
+      ),
+      Effect.map((state) => ({ sha256: state.hash.digest("hex"), bytes: state.bytes })),
+      Effect.option,
+    );
+
+  /** Regular files of an output folder (relative, `/`-separated), and the links it must not hold. */
+  const listOutput = (outputDir: string) =>
+    Effect.tryPromise(() =>
+      NodeFSP.readdir(outputDir, { recursive: true, withFileTypes: true }),
+    ).pipe(
+      Effect.map((entries) => {
+        const files: string[] = [];
+        const links: string[] = [];
+        for (const entry of entries) {
+          const relative = path
+            .relative(outputDir, path.join(entry.parentPath, entry.name))
+            .split(path.sep)
+            .join("/");
+          if (entry.isSymbolicLink()) links.push(relative);
+          else if (entry.isFile()) files.push(relative);
+        }
+        return { files: files.toSorted(), links: links.toSorted() };
+      }),
+      Effect.orElseSucceed(() => ({ files: [] as string[], links: [] as string[] })),
+    );
+
+  /**
+   * Hashes the output's regular files except `preview.json`, at most the
+   * descriptor's own file limit, into one digest over `path\0sha256` lines in
+   * path order, and reads `preview.json` when the build wrote one.
+   */
   const inspectOutput = Effect.fn("MosaicStudio.inspectOutput")(function* (outputDir: string) {
     if (!(yield* exists(path.join(outputDir, "index.html")))) return null;
-    const files = yield* listFiles(outputDir, MAX_SOURCE_FILES);
+    const listing = yield* listOutput(outputDir);
+    const candidates = listing.files.filter((file) => file !== MOSAIC_PREVIEW_SPEC.fileName);
+    const layoutProblems = listing.links.map((link) => `symbolic link: ${link}`);
+    if (candidates.length > MOSAIC_PREVIEW_SPEC.maxFiles) {
+      layoutProblems.push(`more than ${MOSAIC_PREVIEW_SPEC.maxFiles} files`);
+    }
     const digest = NodeCrypto.createHash("sha256");
-    let fileCount = 0;
+    const files: OutputFile[] = [];
     let totalBytes = 0;
     let builtAtMs = 0;
-    for (const file of files) {
+    for (const file of candidates.slice(0, MOSAIC_PREVIEW_SPEC.maxFiles)) {
       const absolute = path.join(outputDir, file);
       const info = yield* statFile(absolute);
       if (info === null) continue;
-      const bytes = yield* fileSystem.readFile(absolute).pipe(Effect.option);
-      if (Option.isNone(bytes)) continue;
-      digest.update(
-        `${file}\0${NodeCrypto.createHash("sha256").update(bytes.value).digest("hex")}\n`,
-      );
-      fileCount += 1;
-      totalBytes += info.size;
+      const hashed = yield* hashFile(absolute);
+      if (Option.isNone(hashed)) continue;
+      digest.update(`${file}\0${hashed.value.sha256}\n`);
+      files.push({ path: file, ...hashed.value });
+      totalBytes += hashed.value.bytes;
       builtAtMs = Math.max(builtAtMs, info.mtimeMs);
     }
+    const descriptorPath = path.join(outputDir, MOSAIC_PREVIEW_SPEC.fileName);
+    const descriptorInfo = yield* statFile(descriptorPath);
+    // A descriptor far beyond 2000 entries is not read; an empty text decodes as invalid.
+    const descriptorText =
+      descriptorInfo === null
+        ? null
+        : descriptorInfo.size > MAX_DESCRIPTOR_BYTES
+          ? ""
+          : Option.getOrElse(yield* readText(descriptorPath), () => "");
+    const fileCount = files.length;
     const studioBuild = (yield* readText(path.join(outputDir, "studio-build.json"))).pipe(
       Option.flatMap(decodeJson),
       Option.map((parsed) => field(parsed, "capabilities")),
@@ -248,6 +307,9 @@ const make = Effect.gen(function* () {
       sha256: digest.digest("hex"),
       builtAtMs,
       capabilities,
+      files,
+      layoutProblems,
+      descriptorText,
     };
   });
 
@@ -287,7 +349,7 @@ const make = Effect.gen(function* () {
     const cwd = path.resolve(input.cwd);
     const clientDir = path.join(cwd, "clients", input.clientId);
     const outputRelative = `dist-clients/${input.clientId}`;
-    const [head, branch, status, output, newestSourceAtMs, artifacts] = yield* Effect.all(
+    const [head, branch, porcelainStatus, output, newestSourceAtMs, artifacts] = yield* Effect.all(
       [
         git(cwd, ["rev-parse", "HEAD"]),
         git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
@@ -298,26 +360,35 @@ const make = Effect.gen(function* () {
       ],
       { concurrency: "unbounded" },
     );
-    const dirtyFiles = (status ?? "")
+    const dirtyFiles = (porcelainStatus ?? "")
       .split(/\r?\n/)
       .filter((line) => line.length > 3)
       .map((line) => line.slice(3));
     const last = lastRuns.get(runKey(cwd, input.clientId));
     const lastRun = last?.run ?? null;
+    const status = deriveBuildStatus({
+      building: building.has(runKey(cwd, input.clientId)),
+      outputBuiltAtMs: output?.builtAtMs ?? null,
+      newestSourceAtMs,
+      lastFailure:
+        last !== undefined && runFailed(last.run)
+          ? { outputBuiltAtMs: last.outputBuiltAtMs }
+          : null,
+    });
+    const contract = deriveContract({
+      clientId: input.clientId,
+      buildStatus: status,
+      hasOutput: output !== null,
+      descriptorText: output?.descriptorText ?? null,
+      files: output?.files ?? [],
+      layoutProblems: output?.layoutProblems ?? [],
+    });
     const receipt: MosaicBuildReceipt = {
       format: "t3.mosaic-build-receipt",
       version: 1,
       cwd,
       clientId: input.clientId,
-      status: deriveBuildStatus({
-        building: building.has(runKey(cwd, input.clientId)),
-        outputBuiltAtMs: output?.builtAtMs ?? null,
-        newestSourceAtMs,
-        lastFailure:
-          last !== undefined && runFailed(last.run)
-            ? { outputBuiltAtMs: last.outputBuiltAtMs }
-            : null,
-      }),
+      status,
       git: {
         head: head?.trim() || null,
         branch: branch?.trim() === "HEAD" ? null : branch?.trim() || null,
@@ -338,9 +409,14 @@ const make = Effect.gen(function* () {
       newestSourceAt: newestSourceAtMs === null ? null : isoAt(newestSourceAtMs),
       lastRun,
       artifacts,
+      contract: contract?.contract ?? null,
       inspectedAt: DateTime.formatIso(yield* DateTime.now),
     };
-    return receipt;
+    return {
+      receipt,
+      /** Path to sha256 the preview host must match, only for a verified output. */
+      verifiedFiles: contract?.contract.state === "verified" ? contract.files : undefined,
+    };
   });
 
   const inspect: MosaicStudio["Service"]["inspect"] = Effect.fn("MosaicStudio.inspect")(
@@ -362,7 +438,7 @@ const make = Effect.gen(function* () {
     "MosaicStudio.inspectClient",
   )(function* (input) {
     yield* requireClient(input);
-    return yield* receiptFor(input).pipe(ioFailed(input));
+    return (yield* receiptFor(input).pipe(ioFailed(input))).receipt;
   });
 
   const build: MosaicStudio["Service"]["build"] = Effect.fn("MosaicStudio.build")(
@@ -416,14 +492,15 @@ const make = Effect.gen(function* () {
         },
         outputBuiltAtMs: outputAfter?.builtAtMs ?? null,
       });
-      return yield* receiptFor(input).pipe(ioFailed(input));
+      return (yield* receiptFor(input).pipe(ioFailed(input))).receipt;
     },
   );
 
   const openPreview: MosaicStudio["Service"]["openPreview"] = Effect.fn("MosaicStudio.openPreview")(
     function* (input) {
-      const receipt = yield* inspectClient(input);
-      if (receipt.status === "failed") {
+      yield* requireClient(input);
+      const { receipt, verifiedFiles } = yield* receiptFor(input).pipe(ioFailed(input));
+      if (receipt.status === "failed" || receipt.contract?.state === "failed") {
         return yield* new MosaicError({
           failure: "build-failed",
           cwd: input.cwd,
@@ -437,7 +514,16 @@ const make = Effect.gen(function* () {
           clientId: input.clientId,
         });
       }
-      const origin = yield* previewHost.serve(path.join(receipt.cwd, receipt.output.path)).pipe(
+      if (receipt.contract?.state === "invalid") {
+        return yield* new MosaicError({
+          failure: "contract-invalid",
+          cwd: input.cwd,
+          clientId: input.clientId,
+        });
+      }
+      // A verified output is served only while its bytes still match the descriptor.
+      const root = path.join(receipt.cwd, receipt.output.path);
+      const origin = yield* previewHost.serve(root, verifiedFiles).pipe(
         Effect.mapError(
           (cause) =>
             new MosaicError({

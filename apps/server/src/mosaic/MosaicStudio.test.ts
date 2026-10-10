@@ -21,14 +21,38 @@ const layerTest = MosaicStudio.layer.pipe(
 );
 
 // Stands in for Mosaic's build-client script: fails when the client holds a
-// FAIL marker, otherwise writes a minimal client output.
+// FAIL marker, otherwise writes a minimal client output and, unless the client
+// holds a LEGACY marker, its datapass.preview/1 descriptor.
 const BUILD_SCRIPT = `
+import crypto from "node:crypto";
 import fs from "node:fs";
 const id = process.argv[2];
 if (fs.existsSync(\`clients/\${id}/FAIL\`)) { console.error("tsc: type error in app.ts"); process.exit(1); }
-fs.mkdirSync(\`dist-clients/\${id}\`, { recursive: true });
-fs.writeFileSync(\`dist-clients/\${id}/index.html\`, "<h1>" + id + "</h1>");
-fs.writeFileSync(\`dist-clients/\${id}/studio-build.json\`, JSON.stringify({ format: "datapass.client-build", version: 1, client: id, capabilities: ["charts"] }));
+const out = \`dist-clients/\${id}\`;
+fs.rmSync(out, { recursive: true, force: true });
+fs.mkdirSync(\`\${out}/artifacts\`, { recursive: true });
+const contents = {
+  "artifacts/result.json": JSON.stringify({ format: "datapass.artifact", version: 1, id: "result" }),
+  "index.html": "<h1>" + id + "</h1>",
+  "studio-build.json": JSON.stringify({ format: "datapass.client-build", version: 1, client: id, capabilities: ["charts"] }),
+};
+const files = [];
+for (const [path, text] of Object.entries(contents)) {
+  fs.writeFileSync(\`\${out}/\${path}\`, text);
+  files.push({ path, bytes: Buffer.byteLength(text), sha256: crypto.createHash("sha256").update(text).digest("hex") });
+}
+if (!fs.existsSync(\`clients/\${id}/LEGACY\`)) {
+  fs.writeFileSync(\`\${out}/preview.json\`, JSON.stringify({
+    format: "datapass.preview", version: 1,
+    app: { id, title: "Demo lab", variant: "client" },
+    entry: "index.html", sdkVersion: "0.8.1", sourceCommit: null,
+    publication: { mode: "preview", noindex: true },
+    capabilities: ["charts"], files,
+    artifacts: [{ id: "result", path: "artifacts/result.json", sha256: files[0].sha256, provenance: "synthetic" }],
+    open: { file: false, httpLoopback: true },
+    csp: "default-src 'self'",
+  }, null, 2));
+}
 `;
 
 const dirs: string[] = [];
@@ -154,10 +178,22 @@ describe("MosaicStudio", () => {
         expect(built.git).toEqual({ head, branch: "main", dirtyFiles: [], dirtyCount: 0 });
         expect(built.output).toMatchObject({
           path: "dist-clients/demo",
-          fileCount: 2,
+          fileCount: 3,
           capabilities: ["charts"],
         });
         expect(built.lastRun).toMatchObject({ exitCode: 0, headAtStart: head });
+        expect(before.contract).toBeNull();
+        expect(built.contract).toMatchObject({
+          state: "verified",
+          problems: [],
+          descriptor: {
+            entry: "index.html",
+            sdkVersion: "0.8.1",
+            sourceCommit: null,
+            fileCount: 3,
+            artifacts: [{ id: "result", provenance: "synthetic" }],
+          },
+        });
 
         const preview = yield* studio.openPreview({ cwd: root, clientId: "demo" });
         const page = yield* Effect.promise(() => fetch(preview.url).then((r) => r.text()));
@@ -173,18 +209,75 @@ describe("MosaicStudio", () => {
         NodeFS.utimesSync(NodePath.join(root, "clients/demo/app.ts"), later, later);
         const stale = yield* studio.inspectClient({ cwd: root, clientId: "demo" });
         expect(stale.status).toBe("stale");
+        expect(stale.contract?.state).toBe("stale");
+        expect(stale.contract?.problems).toEqual(["sources changed after this build"]);
         expect(stale.git.dirtyFiles).toEqual(["clients/demo/app.ts"]);
 
         // A failing rebuild leaves the old output on disk, but it is never ready.
         write(root, "clients/demo/FAIL", "");
         const failed = yield* studio.build({ cwd: root, clientId: "demo" });
         expect(failed.status).toBe("failed");
+        expect(failed.contract?.state).toBe("failed");
         expect(failed.lastRun?.exitCode).not.toBe(0);
         expect(failed.lastRun?.logTail).toContain("type error");
         const refused = yield* studio
           .openPreview({ cwd: root, clientId: "demo" })
           .pipe(Effect.flip);
         expect(refused.failure).toBe("build-failed");
+      }).pipe(Effect.provide(layerTest)),
+    60_000,
+  );
+
+  it.effect(
+    "binds previews to the preview.json descriptor and labels legacy output",
+    () =>
+      Effect.gen(function* () {
+        const studio = yield* MosaicStudio.MosaicStudio;
+        const root = makeMosaicRepo();
+        const input = { cwd: root, clientId: "demo" };
+        const output = NodePath.join(root, "dist-clients/demo");
+
+        expect((yield* studio.build(input)).contract?.state).toBe("verified");
+        const preview = yield* studio.openPreview(input);
+        const fetchPage = () =>
+          Effect.promise(() =>
+            fetch(preview.url).then(async (r) => ({ status: r.status, text: await r.text() })),
+          );
+        expect(yield* fetchPage()).toEqual({ status: 200, text: "<h1>demo</h1>" });
+
+        // One changed output byte: the verified preview refuses it, the receipt turns stale.
+        write(output, "index.html", "<h1>demO</h1>");
+        expect((yield* fetchPage()).status).toBe(409);
+        const tampered = yield* studio.inspectClient(input);
+        expect(tampered.status).toBe("ready");
+        expect(tampered.contract).toMatchObject({
+          state: "stale",
+          problems: ["content differs: index.html"],
+        });
+        // Stale output still opens, unbound, behind the stale label.
+        yield* studio.openPreview(input);
+        expect(yield* fetchPage()).toEqual({ status: 200, text: "<h1>demO</h1>" });
+
+        // A forged descriptor (unknown field) is invalid and never previewed.
+        const descriptor = JSON.parse(
+          NodeFS.readFileSync(NodePath.join(output, "preview.json"), "utf8"),
+        );
+        write(output, "preview.json", JSON.stringify({ ...descriptor, deploy: "public" }));
+        expect((yield* studio.inspectClient(input)).contract?.state).toBe("invalid");
+        expect((yield* studio.openPreview(input).pipe(Effect.flip)).failure).toBe(
+          "contract-invalid",
+        );
+
+        // An older client without preview.json is detected by its layout and opens unverified.
+        write(root, "clients/demo/LEGACY", "");
+        const legacy = yield* studio.build(input);
+        expect(legacy.contract).toEqual({
+          state: "legacy",
+          problems: ["no preview.json: legacy adapter, unverified"],
+          descriptor: null,
+        });
+        yield* studio.openPreview(input);
+        expect((yield* fetchPage()).status).toBe(200);
       }).pipe(Effect.provide(layerTest)),
     60_000,
   );

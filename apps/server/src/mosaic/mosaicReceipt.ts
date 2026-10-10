@@ -1,9 +1,15 @@
-import type {
-  MosaicArtifactSummary,
-  MosaicBuildRun,
-  MosaicBuildStatus,
-  MosaicVariant,
+import {
+  type MosaicArtifactSummary,
+  type MosaicBuildRun,
+  type MosaicBuildStatus,
+  type MosaicPreviewContract,
+  type MosaicPreviewDescriptor,
+  type MosaicPreviewSummary,
+  type MosaicVariant,
+  decodeMosaicPreviewDescriptor,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
 
 /** Mosaic's contract documents bound a compact JSON artifact to 1 MB. */
 export const MAX_ARTIFACT_BYTES = 1024 * 1024;
@@ -109,6 +115,98 @@ export function deriveBuildStatus(input: {
   }
   return "ready";
 }
+
+const MAX_CONTRACT_PROBLEMS = 20;
+
+/** One regular file of a build output, hashed from its bytes on disk. */
+export interface OutputFile {
+  readonly path: string;
+  readonly bytes: number;
+  readonly sha256: string;
+}
+
+/**
+ * Checks a build output against its `datapass.preview/1` descriptor.
+ * `descriptorText` is `preview.json` (null when absent); `files` are the other
+ * regular files on disk. Returns null when there is nothing to check yet.
+ * Only a `verified` result may be served as matching the descriptor, and the
+ * returned `files` (path to sha256) are what the preview host binds to.
+ */
+export function deriveContract(input: {
+  readonly clientId: string;
+  readonly buildStatus: MosaicBuildStatus;
+  readonly hasOutput: boolean;
+  readonly descriptorText: string | null;
+  readonly files: ReadonlyArray<OutputFile>;
+  /** More regular files than the descriptor may list, or symbolic links, were found. */
+  readonly layoutProblems: ReadonlyArray<string>;
+}): {
+  readonly contract: MosaicPreviewContract;
+  readonly files: ReadonlyMap<string, string>;
+} | null {
+  const bounded = (problems: ReadonlyArray<string>) => problems.slice(0, MAX_CONTRACT_PROBLEMS);
+  const result = (
+    state: MosaicPreviewContract["state"],
+    problems: ReadonlyArray<string>,
+    descriptor: MosaicPreviewDescriptor | null = null,
+  ) => ({
+    contract: {
+      state,
+      problems: bounded(problems),
+      descriptor: descriptor === null ? null : summarizeDescriptor(descriptor),
+    },
+    files: new Map(descriptor?.files.map((file) => [file.path, file.sha256]) ?? []),
+  });
+
+  if (input.descriptorText === null) {
+    if (input.buildStatus === "failed") return result("failed", ["the last build failed"]);
+    return input.hasOutput
+      ? result("legacy", ["no preview.json: legacy adapter, unverified"])
+      : null;
+  }
+  const decoded = decodeMosaicPreviewDescriptor(input.descriptorText);
+  if (Exit.isFailure(decoded)) {
+    const error = Cause.squash(decoded.cause);
+    const reason = (error instanceof Error ? error.message : String(error)).slice(0, 600);
+    return result(input.buildStatus === "failed" ? "failed" : "invalid", [
+      `preview.json is not a valid datapass.preview/1 document: ${reason}`,
+    ]);
+  }
+  const descriptor = decoded.value;
+  if (descriptor.app.id !== input.clientId) {
+    return result("invalid", [`preview.json describes '${descriptor.app.id}'`], descriptor);
+  }
+  if (input.buildStatus === "failed")
+    return result("failed", ["the last build failed"], descriptor);
+
+  const problems = [...input.layoutProblems];
+  const onDisk = new Map(input.files.map((file) => [file.path, file]));
+  for (const listed of descriptor.files) {
+    const actual = onDisk.get(listed.path);
+    if (actual === undefined) problems.push(`missing file: ${listed.path}`);
+    else if (actual.bytes !== listed.bytes || actual.sha256 !== listed.sha256) {
+      problems.push(`content differs: ${listed.path}`);
+    }
+  }
+  const listedPaths = new Set(descriptor.files.map((file) => file.path));
+  for (const file of input.files) {
+    if (!listedPaths.has(file.path)) problems.push(`unlisted file: ${file.path}`);
+  }
+  if (input.buildStatus === "stale") problems.push("sources changed after this build");
+  return result(problems.length === 0 ? "verified" : "stale", problems, descriptor);
+}
+
+const summarizeDescriptor = (descriptor: MosaicPreviewDescriptor): MosaicPreviewSummary => ({
+  app: descriptor.app,
+  entry: descriptor.entry,
+  sdkVersion: descriptor.sdkVersion,
+  sourceCommit: descriptor.sourceCommit,
+  publication: descriptor.publication,
+  capabilities: descriptor.capabilities,
+  open: descriptor.open,
+  fileCount: descriptor.files.length,
+  artifacts: descriptor.artifacts,
+});
 
 /** Whether a finished run failed. */
 export const runFailed = (run: MosaicBuildRun) => run.timedOut || run.exitCode !== 0;

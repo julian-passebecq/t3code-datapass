@@ -12,6 +12,7 @@
  *
  * @module MosaicPreviewHost
  */
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeHttp from "node:http";
 import * as NodePath from "node:path";
@@ -138,8 +139,16 @@ export function realPreviewFile(root: string, file: string): string | undefined 
   }
 }
 
+/**
+ * With `verifiedFiles` (relative path to sha256), only listed files whose bytes
+ * still match are served: unlisted is 404, changed since verification is 409.
+ */
 const handle =
-  (root: string, host: () => string) =>
+  (
+    root: string,
+    host: () => string,
+    verifiedFiles: () => ReadonlyMap<string, string> | undefined,
+  ) =>
   (request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => {
     const headers = {
       "Content-Security-Policy": [readPolicy(root), HOST_CEILING_CSP],
@@ -165,6 +174,26 @@ const handle =
     }
     try {
       const stat = NodeFS.statSync(file);
+      const verified = verifiedFiles();
+      if (verified !== undefined) {
+        const expected = verified.get(
+          NodePath.relative(NodeFS.realpathSync.native(root), file).split(NodePath.sep).join("/"),
+        );
+        if (expected === undefined) throw new Error("not listed");
+        const bytes = NodeFS.readFileSync(file);
+        if (NodeCrypto.createHash("sha256").update(bytes).digest("hex") !== expected) {
+          response.writeHead(409, headers).end();
+          return;
+        }
+        response.writeHead(200, {
+          ...headers,
+          "Content-Type":
+            CONTENT_TYPES[NodePath.extname(file).toLowerCase()] ?? "application/octet-stream",
+          "Content-Length": bytes.length,
+        });
+        response.end(request.method === "HEAD" ? undefined : bytes);
+        return;
+      }
       response.writeHead(200, {
         ...headers,
         "Content-Type":
@@ -186,8 +215,14 @@ const handle =
 export class MosaicPreviewHost extends Context.Service<
   MosaicPreviewHost,
   {
-    /** The loopback origin serving `root`, started on first use and reused after. */
-    readonly serve: (root: string) => Effect.Effect<string, MosaicPreviewStartError>;
+    /**
+     * The loopback origin serving `root`, started on first use and reused after.
+     * `verifiedFiles` binds it to a verified descriptor until the next call.
+     */
+    readonly serve: (
+      root: string,
+      verifiedFiles?: ReadonlyMap<string, string>,
+    ) => Effect.Effect<string, MosaicPreviewStartError>;
     /** Whether `origin` was ever handed out; evicted servers' pages may still be open. */
     readonly isPreviewOrigin: (origin: string) => boolean;
   }
@@ -203,8 +238,15 @@ const make = Effect.gen(function* () {
   });
   yield* Effect.addFinalizer(() => closeAll);
 
-  const serve = Effect.fn("MosaicPreviewHost.serve")(function* (root: string) {
+  const verifiedByRoot = new Map<string, ReadonlyMap<string, string>>();
+
+  const serve = Effect.fn("MosaicPreviewHost.serve")(function* (
+    root: string,
+    verifiedFiles?: ReadonlyMap<string, string>,
+  ) {
     const key = NodePath.resolve(root);
+    if (verifiedFiles === undefined) verifiedByRoot.delete(key);
+    else verifiedByRoot.set(key, verifiedFiles);
     const existing = servers.get(key);
     if (existing !== undefined && existing.server.listening) return existing.origin;
 
@@ -215,7 +257,13 @@ const make = Effect.gen(function* () {
     }
 
     let host = "";
-    const server = NodeHttp.createServer(handle(key, () => host));
+    const server = NodeHttp.createServer(
+      handle(
+        key,
+        () => host,
+        () => verifiedByRoot.get(key),
+      ),
+    );
     const origin = yield* Effect.callback<string, MosaicPreviewStartError>((resume) => {
       server.once("error", (cause) => resume(Effect.fail(new MosaicPreviewStartError({ cause }))));
       server.listen(0, "127.0.0.1", () => {
