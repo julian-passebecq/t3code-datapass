@@ -410,7 +410,8 @@ const layerWorkspaceFileSystem = WorkspaceFileSystem.layer.pipe(
 );
 
 const layerMosaicStudio = MosaicStudio.layer.pipe(
-  Layer.provide(MosaicPreviewHost.layer),
+  // Merged so the route guard below sees the same live preview origins.
+  Layer.provideMerge(MosaicPreviewHost.layer),
   Layer.provide(ProcessRunner.layer),
 );
 
@@ -701,6 +702,7 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
   Layer.provide(layerCommandReadiness),
+  Layer.provide(MosaicPreviewHost.layerPreviewOriginGuard),
   Layer.provide(ServerHttp.layerBrowserApiCors),
   Layer.provide(ServerHttp.layerHttpCompression),
 );
