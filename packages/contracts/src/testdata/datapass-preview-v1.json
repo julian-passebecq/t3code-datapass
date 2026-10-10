@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/julian-passebecq/datapass-mosaicstudio/main/spec/preview/v1/preview.schema.json",
+  "format": "datapass.preview",
+  "version": 1,
+  "app": { "id": "motion-reference", "title": "Motion / reference app", "variant": "client" },
+  "entry": "index.html",
+  "sdkVersion": "0.8.1",
+  "sourceCommit": "8b22d9c121743d8cd5e78ca74098c5e332e4e45c",
+  "publication": { "mode": "preview", "noindex": true },
+  "capabilities": ["motion", "charts"],
+  "files": [
+    {
+      "path": "artifacts/coding-lab-trace.json",
+      "bytes": 812,
+      "sha256": "5d41402abc4b2a76b9719d911017c592ae2ad2b1f8e6d0b16f1d6b3c2f5e9a10"
+    },
+    {
+      "path": "assets/index-3f2a.js",
+      "bytes": 20480,
+      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    },
+    {
+      "path": "index.html",
+      "bytes": 1234,
+      "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "coding-lab-trace",
+      "path": "artifacts/coding-lab-trace.json",
+      "sha256": "5d41402abc4b2a76b9719d911017c592ae2ad2b1f8e6d0b16f1d6b3c2f5e9a10",
+      "provenance": "synthetic"
+    }
+  ],
+  "open": { "file": false, "httpLoopback": true },
+  "csp": "default-src 'self'; script-src 'self'"
+}

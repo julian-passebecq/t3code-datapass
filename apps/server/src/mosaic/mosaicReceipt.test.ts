@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   contentSecurityPolicyFromHeaders,
   deriveBuildStatus,
+  deriveContract,
   extractClientTitle,
   parseWorktreeList,
   summarizeContractDocument,
@@ -155,5 +156,56 @@ describe("extractClientTitle", () => {
       ),
     ).toBe("Foundation");
     expect(extractClientTitle("export default defineApp({})")).toBeNull();
+  });
+});
+
+describe("deriveContract", () => {
+  const sha = (char: string) => char.repeat(64);
+  const descriptor = (appId = "demo") =>
+    JSON.stringify({
+      format: "datapass.preview",
+      version: 1,
+      app: { id: appId, title: "Demo", variant: "client" },
+      entry: "index.html",
+      sdkVersion: "0.8.1",
+      sourceCommit: null,
+      publication: { mode: "preview", noindex: true },
+      capabilities: [],
+      files: [{ path: "index.html", bytes: 3, sha256: sha("a") }],
+      artifacts: [],
+      open: { file: false, httpLoopback: true },
+      csp: "default-src 'self'",
+    });
+  const check = (overrides: Partial<Parameters<typeof deriveContract>[0]>) =>
+    deriveContract({
+      clientId: "demo",
+      buildStatus: "ready",
+      hasOutput: true,
+      descriptorText: descriptor(),
+      files: [{ path: "index.html", bytes: 3, sha256: sha("a") }],
+      layoutProblems: [],
+      ...overrides,
+    })?.contract;
+
+  it("verifies only an exact match and binds its file hashes", () => {
+    expect(check({})?.state).toBe("verified");
+    expect(
+      check({
+        files: [
+          { path: "index.html", bytes: 3, sha256: sha("a") },
+          { path: "extra.js", bytes: 1, sha256: sha("b") },
+        ],
+      })?.problems,
+    ).toEqual(["unlisted file: extra.js"]);
+    expect(check({ files: [] })?.problems).toEqual(["missing file: index.html"]);
+    expect(check({ layoutProblems: ["symbolic link: x"] })?.state).toBe("stale");
+  });
+
+  it("separates forged, failed, legacy and unbuilt output", () => {
+    expect(check({ descriptorText: descriptor("other") })?.state).toBe("invalid");
+    expect(check({ descriptorText: "{" })?.state).toBe("invalid");
+    expect(check({ buildStatus: "failed" })?.state).toBe("failed");
+    expect(check({ descriptorText: null })?.state).toBe("legacy");
+    expect(check({ descriptorText: null, hasOutput: false, files: [] })).toBeUndefined();
   });
 });

@@ -2,6 +2,7 @@ import type {
   MosaicBuildReceipt,
   MosaicCompareResult,
   MosaicInspectResult,
+  MosaicPreviewContract,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
@@ -23,9 +24,11 @@ import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import {
+  MOSAIC_CONTRACT_PRESENTATION,
   MOSAIC_STATUS_PRESENTATION,
   formatBytes,
   previewAction,
+  shortHash,
   shortSha,
   variantLabel,
 } from "./mosaicPanelLogic";
@@ -405,6 +408,83 @@ function PanelFrame(props: { readonly onRefresh: () => void; readonly children: 
   );
 }
 
+/**
+ * What the build's `preview.json` says and whether the output still matches it.
+ * Artifacts are listed, never rendered: the client's own viewer shows them in the preview.
+ */
+function ContractView(props: { readonly contract: MosaicPreviewContract }) {
+  const { contract } = props;
+  const state = MOSAIC_CONTRACT_PRESENTATION[contract.state];
+  const descriptor = contract.descriptor;
+  return (
+    <section aria-label="Preview contract" className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">Contract</span>
+        <Badge
+          variant={state.tone}
+          tabIndex={0}
+          aria-label={`Contract: ${state.label}. ${state.description}`}
+        >
+          {state.label}
+        </Badge>
+        <span className="text-muted-foreground">{state.description}</span>
+      </div>
+      {contract.problems.length > 0 && (
+        <ul aria-label="Contract problems" className="space-y-0.5 text-muted-foreground text-xs">
+          {contract.problems.map((problem) => (
+            <li key={problem} className="break-words">
+              {problem}
+            </li>
+          ))}
+        </ul>
+      )}
+      {descriptor !== null && (
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-xs">
+          <dt className="text-muted-foreground">SDK</dt>
+          <dd className="font-mono">{descriptor.sdkVersion}</dd>
+          <dt className="text-muted-foreground">Built from</dt>
+          <dd className="truncate font-mono">
+            {descriptor.sourceCommit === null ? "uncommitted" : shortSha(descriptor.sourceCommit)}
+          </dd>
+          <dt className="text-muted-foreground">Publication</dt>
+          <dd>
+            {descriptor.publication.mode}
+            {descriptor.publication.noindex ? " · noindex" : ""}
+          </dd>
+          <dt className="text-muted-foreground">Entry</dt>
+          <dd className="truncate font-mono">{descriptor.entry}</dd>
+        </dl>
+      )}
+      {descriptor !== null && descriptor.artifacts.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-muted-foreground text-xs">
+            Artifacts ({descriptor.artifacts.length})
+          </summary>
+          <ul aria-label="Artifacts" className="mt-1 space-y-0.5 text-xs">
+            {descriptor.artifacts.map((artifact) => (
+              <li
+                key={artifact.id}
+                tabIndex={0}
+                aria-label={`Artifact ${artifact.id}, ${artifact.provenance}, ${artifact.path}, sha256 ${shortHash(artifact.sha256)}`}
+                className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="font-mono">{artifact.id}</span> · {artifact.provenance} ·{" "}
+                <span className="font-mono">{shortHash(artifact.sha256)}</span>
+                <span className="block truncate font-mono text-muted-foreground">
+                  {artifact.path}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-muted-foreground text-xs">
+            Open the preview to view artifacts in the client's own viewer.
+          </p>
+        </details>
+      )}
+    </section>
+  );
+}
+
 function ReceiptView(props: {
   readonly receipt: MosaicBuildReceipt;
   readonly title?: string;
@@ -435,7 +515,7 @@ function ReceiptView(props: {
           <>
             <dt className="text-muted-foreground">Output</dt>
             <dd className="truncate font-mono">
-              {receipt.output.sha256.slice(0, 12)} · {receipt.output.fileCount} files ·{" "}
+              {shortHash(receipt.output.sha256)} · {receipt.output.fileCount} files ·{" "}
               {formatBytes(receipt.output.totalBytes)}
             </dd>
             <dt className="text-muted-foreground">Built</dt>
@@ -456,6 +536,7 @@ function ReceiptView(props: {
           </>
         )}
       </dl>
+      {receipt.contract !== null && <ContractView contract={receipt.contract} />}
       {props.children}
       {receipt.lastRun !== null && receipt.lastRun.logTail !== "" && (
         <details open={receipt.status === "failed"}>

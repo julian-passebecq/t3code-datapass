@@ -1,9 +1,13 @@
-import type { MosaicBuildReceipt } from "@t3tools/contracts";
+import type { MosaicBuildReceipt, MosaicContractState } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { previewAction, variantLabel } from "./mosaicPanelLogic";
 
-const receipt = (status: MosaicBuildReceipt["status"], hasOutput: boolean): MosaicBuildReceipt => ({
+const receipt = (
+  status: MosaicBuildReceipt["status"],
+  hasOutput: boolean,
+  contract: MosaicContractState | null = null,
+): MosaicBuildReceipt => ({
   format: "t3.mosaic-build-receipt",
   version: 1,
   cwd: "/repo",
@@ -23,6 +27,7 @@ const receipt = (status: MosaicBuildReceipt["status"], hasOutput: boolean): Mosa
   newestSourceAt: null,
   lastRun: null,
   artifacts: [],
+  contract: contract === null ? null : { state: contract, problems: [], descriptor: null },
   inspectedAt: "2026-10-09T10:00:00.000Z",
 });
 
@@ -39,6 +44,16 @@ describe("previewAction", () => {
     expect(previewAction(receipt("failed", true)).enabled).toBe(false);
     expect(previewAction(receipt("building", true)).enabled).toBe(false);
     expect(previewAction(receipt("not-built", false)).enabled).toBe(false);
+  });
+
+  it("follows the preview.json check: refuses invalid, labels stale and legacy output", () => {
+    expect(previewAction(receipt("ready", true, "verified"))).toEqual({
+      enabled: true,
+      label: "Open preview",
+    });
+    expect(previewAction(receipt("ready", true, "invalid")).enabled).toBe(false);
+    expect(previewAction(receipt("ready", true, "stale")).label).toBe("Open stale preview");
+    expect(previewAction(receipt("ready", true, "legacy")).label).toBe("Open unverified preview");
   });
 });
 

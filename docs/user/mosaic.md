@@ -21,8 +21,16 @@ worktree builds that worktree.
 - The build card shows the commit, uncommitted files, a hash of the output and the last build's
   result. **Stale** means sources changed after the build. A failed build cannot be previewed until
   a build succeeds, even if older output is still on disk.
+- **Contract** checks the `preview.json` that Mosaic writes after a build against the files on
+  disk. **Verified** means every file matches it, and the preview then refuses any file that
+  changes afterwards until you reopen it. **Stale** means sources or output bytes changed after
+  the build; it still opens, labelled stale. **Invalid** (a malformed or edited `preview.json`) and
+  **Failed** cannot be previewed. **Legacy adapter** is an older client with no `preview.json`: it
+  opens, unverified. The card also shows the SDK version, the commit the build came from (or
+  "uncommitted"), the publication mode, the entry page and each declared artifact with its
+  provenance and hash.
 - Artifact and concept files shipped with the client are listed with their provenance, and any
-  missing required fields are flagged. The client itself renders them.
+  missing required fields are flagged. The client's own viewer renders them in the preview.
 
 To compare two versions, create a second worktree of the repository, then pick it under
 **Compare with**. T3 Code lists the files that differ between the two commits, tells you whether
