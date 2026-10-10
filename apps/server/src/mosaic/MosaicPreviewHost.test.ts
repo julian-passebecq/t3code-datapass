@@ -10,7 +10,11 @@ import * as Layer from "effect/Layer";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { afterEach, describe, expect } from "vite-plus/test";
 
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+
 import * as MosaicPreviewHost from "./MosaicPreviewHost.ts";
+
+const windowsHost = HostProcessPlatform.defaultValue() === "win32";
 
 const roots: string[] = [];
 const makeRoot = (files: Record<string, string>) => {
@@ -95,21 +99,16 @@ describe("realPreviewFile", () => {
     );
   });
 
-  it.skipIf(process.platform !== "win32")(
-    "refuses a junction that leads out of the output folder",
-    () => {
-      const outside = makeRoot({ "index.html": "outside", "secret.txt": "secret" });
-      const root = makeRoot({ "index.html": "inside" });
-      NodeFS.symlinkSync(outside, NodePath.join(root, "linked"), "junction");
+  it.skipIf(!windowsHost)("refuses a junction that leads out of the output folder", () => {
+    const outside = makeRoot({ "index.html": "outside", "secret.txt": "secret" });
+    const root = makeRoot({ "index.html": "inside" });
+    NodeFS.symlinkSync(outside, NodePath.join(root, "linked"), "junction");
 
-      expect(
-        MosaicPreviewHost.realPreviewFile(root, NodePath.join(root, "linked")),
-      ).toBeUndefined();
-      expect(
-        MosaicPreviewHost.realPreviewFile(root, NodePath.join(root, "linked", "secret.txt")),
-      ).toBeUndefined();
-    },
-  );
+    expect(MosaicPreviewHost.realPreviewFile(root, NodePath.join(root, "linked"))).toBeUndefined();
+    expect(
+      MosaicPreviewHost.realPreviewFile(root, NodePath.join(root, "linked", "secret.txt")),
+    ).toBeUndefined();
+  });
 
   it("refuses folders without an index and missing files", () => {
     const root = makeRoot({ "empty/.keep": "", "index.html": "inside" });
@@ -199,11 +198,7 @@ describe("MosaicPreviewHost", () => {
       const outside = makeRoot({ "secret.txt": "secret" });
       const root = makeRoot({ "index.html": "inside" });
       // A junction needs no privileges on Windows; elsewhere a directory symlink is the same escape.
-      NodeFS.symlinkSync(
-        outside,
-        NodePath.join(root, "linked"),
-        process.platform === "win32" ? "junction" : "dir",
-      );
+      NodeFS.symlinkSync(outside, NodePath.join(root, "linked"), windowsHost ? "junction" : "dir");
       const origin = yield* host.serve(root);
       const response = yield* request(origin, "/linked/secret.txt");
       expect(response.status).toBe(404);
