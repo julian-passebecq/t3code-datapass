@@ -30,6 +30,8 @@ const id = process.argv[2];
 if (fs.existsSync(\`clients/\${id}/FAIL\`)) { console.error("tsc: type error in app.ts"); process.exit(1); }
 const out = \`dist-clients/\${id}\`;
 fs.rmSync(out, { recursive: true, force: true });
+fs.mkdirSync("dist-clients", { recursive: true });
+fs.writeFileSync(\`dist-clients/\${id}.env.json\`, JSON.stringify(Object.keys(process.env)));
 fs.mkdirSync(\`\${out}/artifacts\`, { recursive: true });
 const contents = {
   "artifacts/result.json": JSON.stringify({ format: "datapass.artifact", version: 1, id: "result" }),
@@ -320,6 +322,31 @@ describe("MosaicStudio", () => {
           .compare({ clientId: "demo", baseCwd: root, otherCwd: unrelated })
           .pipe(Effect.flip);
         expect(error.failure).toBe("variants-unrelated");
+      }).pipe(Effect.provide(layerTest)),
+    60_000,
+  );
+
+  it.effect(
+    "builds without T3's own settings, so the output matches a terminal build",
+    () =>
+      Effect.gen(function* () {
+        const studio = yield* MosaicStudio.MosaicStudio;
+        const root = makeMosaicRepo();
+        process.env.VITE_T3_PROBE = "http://localhost:1";
+        process.env.T3CODE_PROBE = "1";
+        yield* studio.build({ cwd: root, clientId: "demo" }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              delete process.env.VITE_T3_PROBE;
+              delete process.env.T3CODE_PROBE;
+            }),
+          ),
+        );
+        const seen: string[] = JSON.parse(
+          NodeFS.readFileSync(NodePath.join(root, "dist-clients/demo.env.json"), "utf8"),
+        );
+        expect(seen.some((name) => /^path$/i.test(name))).toBe(true);
+        expect(seen.filter((name) => /^(VITE_T3_PROBE|T3CODE_PROBE)$/i.test(name))).toEqual([]);
       }).pipe(Effect.provide(layerTest)),
     60_000,
   );
