@@ -1,7 +1,7 @@
 import type { MosaicBuildReceipt, MosaicContractState } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { previewAction, variantLabel } from "./mosaicPanelLogic";
+import { initialClientId, knownVariantPath, previewAction, variantLabel } from "./mosaicPanelLogic";
 
 const receipt = (
   status: MosaicBuildReceipt["status"],
@@ -63,5 +63,39 @@ describe("variantLabel", () => {
       "blue · feat/blue",
     );
     expect(variantLabel({ path: "/repo", branch: null })).toBe("repo (detached)");
+  });
+});
+
+describe("initialClientId", () => {
+  const clients = [{ id: "animated-coding-lab" }, { id: "foundation-reference" }];
+
+  it("never picks one of several clients on its own", () => {
+    expect(initialClientId(clients, null)).toBeNull();
+    expect(initialClientId(clients, undefined)).toBeNull();
+  });
+
+  it("keeps a remembered choice across reloads and drops one that disappeared", () => {
+    expect(initialClientId(clients, "foundation-reference")).toBe("foundation-reference");
+    expect(initialClientId(clients, "../outside")).toBeNull();
+    expect(initialClientId([{ id: "only" }], "gone")).toBe("only");
+  });
+
+  it("selects the only client and nothing when there is none", () => {
+    expect(initialClientId([{ id: "only" }], null)).toBe("only");
+    expect(initialClientId([], "foundation-reference")).toBeNull();
+  });
+});
+
+describe("knownVariantPath", () => {
+  const variants = [
+    { path: "/repo", current: true },
+    { path: "/repo-b", current: false },
+  ];
+
+  it("keeps a remembered compare target only while it is another variant", () => {
+    expect(knownVariantPath(variants, "/repo-b")).toBe("/repo-b");
+    expect(knownVariantPath(variants, "/repo")).toBeNull();
+    expect(knownVariantPath(variants, "/elsewhere")).toBeNull();
+    expect(knownVariantPath(variants, null)).toBeNull();
   });
 });

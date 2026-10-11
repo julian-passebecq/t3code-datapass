@@ -27,6 +27,8 @@ import {
   MOSAIC_CONTRACT_PRESENTATION,
   MOSAIC_STATUS_PRESENTATION,
   formatBytes,
+  initialClientId,
+  knownVariantPath,
   previewAction,
   shortHash,
   shortSha,
@@ -56,8 +58,9 @@ interface MosaicPanelProps {
  * script, shows what the output was built from, and opens it in the preview
  * browser on an origin of its own.
  */
-// The panel unmounts when another right-panel tab is shown; keep the choice per checkout.
+// The panel unmounts when another right-panel tab is shown; keep the choices per checkout.
 const lastClientByCwd = new Map<string, string>();
+const lastVariantByCwd = new Map<string, string>();
 
 export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
   const environmentId = threadRef.environmentId;
@@ -73,7 +76,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
   const [clientId, setClientId] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<MosaicBuildReceipt | null>(null);
   const [comparison, setComparison] = useState<MosaicCompareResult | null>(null);
-  const [otherCwd, setOtherCwd] = useState<string | null>(null);
+  const [otherCwd, setOtherCwd] = useState<string | null>(lastVariantByCwd.get(cwd) ?? null);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -106,14 +109,19 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
       const value = result.value;
       setProject(value);
       if (value._tag !== "Mosaic") return;
-      const keep = selectedRef.current;
-      const nextId =
-        keep !== null && value.clients.some((client) => client.id === keep)
-          ? keep
-          : (value.clients[0]?.id ?? null);
-      if (nextId !== null) await selectClient(nextId);
+      setOtherCwd(knownVariantPath(value.variants, lastVariantByCwd.get(cwd)));
+      const nextId = initialClientId(value.clients, selectedRef.current);
+      if (nextId !== null) {
+        await selectClient(nextId);
+        return;
+      }
+      selectedRef.current = null;
+      lastClientByCwd.delete(cwd);
+      setClientId(null);
+      setReceipt(null);
+      setComparison(null);
     },
-    [selectClient],
+    [cwd, selectClient],
   );
 
   // State is only set once the inspect response arrives, never synchronously in the effect.
@@ -263,6 +271,10 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
           </p>
         )}
 
+        {clientId === null && (
+          <p className="text-muted-foreground">Choose a client to build or preview.</p>
+        )}
+
         {receipt === null ? (
           clientId !== null && (
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -311,6 +323,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
                     variant={variant.path === otherCwd ? "secondary" : "ghost"}
                     aria-pressed={variant.path === otherCwd}
                     onClick={() => {
+                      lastVariantByCwd.set(cwd, variant.path);
                       setOtherCwd(variant.path);
                       setComparison(null);
                     }}
