@@ -91,3 +91,27 @@ export function variantLabel(variant: { readonly path: string; readonly branch: 
       .pop() ?? variant.path;
   return variant.branch === null ? `${name} (detached)` : `${name} · ${variant.branch}`;
 }
+
+/**
+ * The client to show when the panel loads or reloads. A remembered choice that still exists
+ * wins; a project with a single client needs no choice; with several, the user picks, so a
+ * build or preview never runs against a client nobody chose.
+ */
+export function initialClientId(
+  clients: ReadonlyArray<{ readonly id: string }>,
+  remembered: string | null | undefined,
+): string | null {
+  if (remembered != null && clients.some((client) => client.id === remembered)) return remembered;
+  return clients.length === 1 ? clients[0]!.id : null;
+}
+
+/** A remembered compare target, kept only while it is still one of the checkout's variants. */
+export function knownVariantPath(
+  variants: ReadonlyArray<{ readonly path: string; readonly current: boolean }>,
+  remembered: string | null | undefined,
+): string | null {
+  return remembered != null &&
+    variants.some((variant) => !variant.current && variant.path === remembered)
+    ? remembered
+    : null;
+}
