@@ -1,4 +1,5 @@
-// Checks that every GitHub Actions job inherited from upstream is skipped in this fork.
+// Checks that every GitHub Actions job inherited from upstream is skipped in this fork,
+// and that inherited workflows never queue fork runs behind a shared concurrency group.
 //
 // Upstream workflows release, deploy, publish, and run on Blacksmith runners this fork
 // cannot use. Each of their jobs must start its `if:` with UPSTREAM_GUARD so it skips
@@ -67,6 +68,29 @@ export function listWorkflowJobs(text: string): WorkflowJob[] {
   return jobs;
 }
 
+/**
+ * A workflow-level concurrency group is resolved before any job `if:`, so a shared
+ * group (or `queue: max`) makes fork runs wait forever behind a run that can never
+ * start. Inherited groups must give each fork run its own group with this prefix.
+ */
+export const FORK_CONCURRENCY_PREFIX =
+  "${{ github.repository != 'pingdotgg/t3code' && format('fork-{0}', github.run_id) || ";
+
+/** The top-level `concurrency.group` of a workflow, or undefined when it has none. */
+export function workflowConcurrencyGroup(text: string): string | undefined {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^concurrency:\s*$/.test(line));
+  if (start === -1) {
+    const inline = lines.find((line) => /^concurrency:\s*\S/.test(line));
+    return inline?.replace(/^concurrency:\s*/, "").trim();
+  }
+  for (let index = start + 1; index < lines.length && !/^\S/.test(lines[index]!); index += 1) {
+    const group = /^ {2}group:\s*(.+?)\s*$/.exec(lines[index]!);
+    if (group) return group[1];
+  }
+  return undefined;
+}
+
 export const isUpstreamGuarded = (condition: string | undefined) =>
   condition !== undefined &&
   (condition === UPSTREAM_GUARD || condition.startsWith(`${UPSTREAM_GUARD} &&`));
@@ -78,7 +102,12 @@ export function findUnguardedJobs(workflowsDir: string): string[] {
     .filter((file) => /\.ya?ml$/.test(file) && !FORK_WORKFLOWS.has(file))
     .sort();
   for (const file of files) {
-    const jobs = listWorkflowJobs(FS.readFileSync(Path.join(workflowsDir, file), "utf8"));
+    const text = FS.readFileSync(Path.join(workflowsDir, file), "utf8");
+    const group = workflowConcurrencyGroup(text);
+    if (group !== undefined && !group.startsWith(FORK_CONCURRENCY_PREFIX)) {
+      problems.push(`${file}: concurrency group must start with ${FORK_CONCURRENCY_PREFIX}`);
+    }
+    const jobs = listWorkflowJobs(text);
     if (jobs.length === 0) problems.push(`${file}: no jobs found (unexpected layout)`);
     for (const job of jobs) {
       if (!isUpstreamGuarded(job.condition)) {

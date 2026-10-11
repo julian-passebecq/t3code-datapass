@@ -2,7 +2,13 @@ import * as Path from "node:path";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import { findUnguardedJobs, isUpstreamGuarded, listWorkflowJobs } from "./fork-workflow-guards.ts";
+import {
+  findUnguardedJobs,
+  FORK_CONCURRENCY_PREFIX,
+  isUpstreamGuarded,
+  listWorkflowJobs,
+  workflowConcurrencyGroup,
+} from "./fork-workflow-guards.ts";
 
 const workflow = `name: Sample
 on: push
@@ -35,6 +41,17 @@ describe("listWorkflowJobs", () => {
       ["block", true],
       ["other_repo", false],
     ]);
+  });
+});
+
+describe("workflowConcurrencyGroup", () => {
+  it("reads the top-level group, not a job's", () => {
+    const text = `on: push\nconcurrency:\n  group: relay-production\n  cancel-in-progress: false\njobs:\n  a:\n    concurrency:\n      group: job-level\n`;
+    expect(workflowConcurrencyGroup(text)).toBe("relay-production");
+    expect(workflowConcurrencyGroup("on: push\njobs:\n  a:\n    runs-on: x\n")).toBeUndefined();
+    expect(
+      workflowConcurrencyGroup(`concurrency:\n  group: ${FORK_CONCURRENCY_PREFIX}'x' }}\n`),
+    ).toBe(`${FORK_CONCURRENCY_PREFIX}'x' }}`);
   });
 });
 
