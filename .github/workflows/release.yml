@@ -32,7 +32,7 @@ on:
 # newest-wins single slot, so a queued stable tag can never be silently
 # dropped. Automatic nightlies recheck the release gap after leaving the queue.
 concurrency:
-  group: release-${{ (github.event_name == 'schedule' || inputs.channel == 'nightly' || inputs.channel == 'preview') && 'nightly' || 'stable' }}
+  group: ${{ github.repository != 'pingdotgg/t3code' && format('fork-{0}', github.run_id) || format('release-{0}', ((github.event_name == 'schedule' || inputs.channel == 'nightly' || inputs.channel == 'preview') && 'nightly' || 'stable')) }}
   cancel-in-progress: false
   queue: max
 

@@ -24,7 +24,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: web-preview-${{ github.event.pull_request.number }}
+  group: ${{ github.repository != 'pingdotgg/t3code' && format('fork-{0}', github.run_id) || format('web-preview-{0}', (github.event.pull_request.number)) }}
   cancel-in-progress: true
 
 jobs:

@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-aur
+  group: ${{ github.repository != 'pingdotgg/t3code' && format('fork-{0}', github.run_id) || 'publish-aur' }}
   cancel-in-progress: false
 
 jobs:

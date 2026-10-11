@@ -84,7 +84,7 @@ on:
 # queued run per group, so a burst of merges collapses into one run of the
 # newest commit — intermediate commits don't need their own OTA.
 concurrency:
-  group: mobile-eas-production
+  group: ${{ github.repository != 'pingdotgg/t3code' && format('fork-{0}', github.run_id) || 'mobile-eas-production' }}
   cancel-in-progress: false
 
 jobs:

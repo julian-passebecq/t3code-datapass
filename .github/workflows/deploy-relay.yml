@@ -20,7 +20,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: relay-production
+  group: ${{ github.repository != 'pingdotgg/t3code' && format('fork-{0}', github.run_id) || 'relay-production' }}
   cancel-in-progress: false
 
 jobs:

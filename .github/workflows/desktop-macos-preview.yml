@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: desktop-macos-preview-${{ github.event.pull_request.number }}
+  group: ${{ github.repository != 'pingdotgg/t3code' && format('fork-{0}', github.run_id) || format('desktop-macos-preview-{0}', (github.event.pull_request.number)) }}
   # Adding an unrelated label skips the job and must not cancel a build.
   cancel-in-progress: ${{ github.event.label.name == 'preview:mac' }}
 
