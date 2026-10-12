@@ -29,6 +29,7 @@ import {
   formatBytes,
   initialClientId,
   knownVariantPath,
+  mosaicFailureText,
   previewAction,
   shortHash,
   shortSha,
@@ -40,11 +41,7 @@ const QUIET = { reportFailure: false, reportDefect: false } as const;
 
 function failureMessage(result: AtomCommandResult<unknown, unknown>): string | null {
   if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return null;
-  const error = squashAtomCommandFailure(result);
-  return error instanceof Error ||
-    (typeof error === "object" && error !== null && "message" in error)
-    ? String((error as { message: unknown }).message)
-    : "Something went wrong.";
+  return mosaicFailureText(squashAtomCommandFailure(result));
 }
 
 interface MosaicPanelProps {
