@@ -34,6 +34,7 @@ import {
   shortSha,
   variantLabel,
 } from "./mosaicPanelLogic";
+import { createMosaicPanelChoices } from "./mosaicPanelChoices";
 
 const QUIET = { reportFailure: false, reportDefect: false } as const;
 
@@ -58,9 +59,9 @@ interface MosaicPanelProps {
  * script, shows what the output was built from, and opens it in the preview
  * browser on an origin of its own.
  */
-// The panel unmounts when another right-panel tab is shown; keep the choices per checkout.
-const lastClientByCwd = new Map<string, string>();
-const lastVariantByCwd = new Map<string, string>();
+// The panel unmounts when another right-panel tab is shown and the page can reload; keep the
+// choices per checkout (in memory and in browser storage).
+const choices = createMosaicPanelChoices();
 
 export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
   const environmentId = threadRef.environmentId;
@@ -76,17 +77,17 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
   const [clientId, setClientId] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<MosaicBuildReceipt | null>(null);
   const [comparison, setComparison] = useState<MosaicCompareResult | null>(null);
-  const [otherCwd, setOtherCwd] = useState<string | null>(lastVariantByCwd.get(cwd) ?? null);
+  const [otherCwd, setOtherCwd] = useState<string | null>(choices.get(cwd).variantPath ?? null);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // The latest selection, so slower responses for an earlier one are dropped.
-  const selectedRef = useRef<string | null>(lastClientByCwd.get(cwd) ?? null);
+  const selectedRef = useRef<string | null>(choices.get(cwd).clientId ?? null);
 
   const selectClient = useCallback(
     async (id: string) => {
       selectedRef.current = id;
-      lastClientByCwd.set(cwd, id);
+      choices.setClient(cwd, id);
       setClientId(id);
       setReceipt(null);
       setComparison(null);
@@ -109,14 +110,14 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
       const value = result.value;
       setProject(value);
       if (value._tag !== "Mosaic") return;
-      setOtherCwd(knownVariantPath(value.variants, lastVariantByCwd.get(cwd)));
+      setOtherCwd(knownVariantPath(value.variants, choices.get(cwd).variantPath));
       const nextId = initialClientId(value.clients, selectedRef.current);
       if (nextId !== null) {
         await selectClient(nextId);
         return;
       }
       selectedRef.current = null;
-      lastClientByCwd.delete(cwd);
+      choices.setClient(cwd, null);
       setClientId(null);
       setReceipt(null);
       setComparison(null);
@@ -323,7 +324,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
                     variant={variant.path === otherCwd ? "secondary" : "ghost"}
                     aria-pressed={variant.path === otherCwd}
                     onClick={() => {
-                      lastVariantByCwd.set(cwd, variant.path);
+                      choices.setVariant(cwd, variant.path);
                       setOtherCwd(variant.path);
                       setComparison(null);
                     }}
