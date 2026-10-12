@@ -11,6 +11,7 @@ import {
   knownVariantPath,
   mosaicFailureText,
   previewAction,
+  stillSelected,
   variantLabel,
 } from "./mosaicPanelLogic";
 
@@ -139,5 +140,29 @@ describe("mosaicFailureText", () => {
       "Build this client before previewing it.",
     );
     expect(mosaicFailureText(undefined)).toBe("Something went wrong.");
+  });
+});
+
+describe("stillSelected", () => {
+  it("keeps a result while the same client is selected", () => {
+    expect(stillSelected({ clientId: "a" }, { clientId: "a", otherCwd: "/b" })).toBe(true);
+  });
+
+  it("drops a late result after the user picked another client or cleared the choice", () => {
+    expect(stillSelected({ clientId: "a" }, { clientId: "b" })).toBe(false);
+    expect(stillSelected({ clientId: "a" }, { clientId: null })).toBe(false);
+    expect(stillSelected({ clientId: null }, { clientId: null })).toBe(false);
+  });
+
+  it("drops a late comparison after the compare target changed", () => {
+    expect(
+      stillSelected({ clientId: "a", otherCwd: "/v1" }, { clientId: "a", otherCwd: "/v1" }),
+    ).toBe(true);
+    expect(
+      stillSelected({ clientId: "a", otherCwd: "/v1" }, { clientId: "a", otherCwd: "/v2" }),
+    ).toBe(false);
+    expect(
+      stillSelected({ clientId: "a", otherCwd: "/v1" }, { clientId: "b", otherCwd: "/v1" }),
+    ).toBe(false);
   });
 });

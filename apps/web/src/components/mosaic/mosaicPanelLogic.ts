@@ -149,3 +149,20 @@ export function mosaicFailureText(error: unknown): string {
   }
   return "Something went wrong.";
 }
+
+/** What the panel was showing when an action started, or is showing now. */
+export interface MosaicSelection {
+  readonly clientId: string | null;
+  /** The compare target; only checked for results that depend on it. */
+  readonly otherCwd?: string | null;
+}
+
+/**
+ * Whether the result of an action that started for `started` may still be shown. Builds and
+ * previews can take minutes and the client and compare buttons stay usable meanwhile; a late
+ * result for a client or variant the user has since left must not appear under the new one.
+ */
+export function stillSelected(started: MosaicSelection, current: MosaicSelection): boolean {
+  if (started.clientId === null || started.clientId !== current.clientId) return false;
+  return started.otherCwd === undefined || started.otherCwd === current.otherCwd;
+}

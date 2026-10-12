@@ -33,6 +33,8 @@ import {
   previewAction,
   shortHash,
   shortSha,
+  stillSelected,
+  type MosaicSelection,
   variantLabel,
 } from "./mosaicPanelLogic";
 import { createMosaicPanelChoices } from "./mosaicPanelChoices";
@@ -80,6 +82,12 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
 
   // The latest selection, so slower responses for an earlier one are dropped.
   const selectedRef = useRef<string | null>(choices.get(cwd).clientId ?? null);
+  // The latest compare target, so a comparison that finishes after it changed is dropped.
+  const otherRef = useRef<string | null>(otherCwd);
+  const chooseOther = useCallback((path: string | null) => {
+    otherRef.current = path;
+    setOtherCwd(path);
+  }, []);
 
   const selectClient = useCallback(
     async (id: string) => {
@@ -107,7 +115,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
       const value = result.value;
       setProject(value);
       if (value._tag !== "Mosaic") return;
-      setOtherCwd(knownVariantPath(value.variants, choices.get(cwd).variantPath));
+      chooseOther(knownVariantPath(value.variants, choices.get(cwd).variantPath));
       const nextId = initialClientId(value.clients, selectedRef.current);
       if (nextId !== null) {
         await selectClient(nextId);
@@ -119,7 +127,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
       setReceipt(null);
       setComparison(null);
     },
-    [cwd, selectClient],
+    [chooseOther, cwd, selectClient],
   );
 
   // State is only set once the inspect response arrives, never synchronously in the effect.
@@ -136,9 +144,12 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
 
   const refresh = () => void loadProject();
 
+  // Builds and previews can outlast the selection they started for; their results (and
+  // failures) are only shown while that selection is still the panel's.
   const run = useCallback(
     async <A,>(
       label: string,
+      started: MosaicSelection,
       action: () => Promise<AtomCommandResult<A, unknown>>,
       onSuccess: (value: A) => void | Promise<void>,
     ) => {
@@ -146,6 +157,8 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
       setActionError(null);
       try {
         const result = await action();
+        const current = { clientId: selectedRef.current, otherCwd: otherRef.current };
+        if (!stillSelected(started, current)) return;
         if (result._tag === "Success") await onSuccess(result.value);
         else setActionError(failureMessage(result));
       } finally {
@@ -160,6 +173,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
       ? undefined
       : run(
           `build:${targetCwd}`,
+          { clientId },
           () => build({ environmentId, input: { cwd: targetCwd, clientId } }),
           (value) => {
             if (targetCwd === cwd) setReceipt(value);
@@ -172,6 +186,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
       ? undefined
       : run(
           `preview:${targetCwd}`,
+          { clientId },
           () => openMosaicPreview({ environmentId, input: { cwd: targetCwd, clientId } }),
           async (value) => {
             if (targetCwd === cwd) setReceipt(value.receipt);
@@ -186,6 +201,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
       ? undefined
       : run(
           "compare",
+          { clientId, otherCwd },
           () => compare({ environmentId, input: { clientId, baseCwd: cwd, otherCwd } }),
           (value) => {
             setComparison(value);
@@ -322,7 +338,7 @@ export default function MosaicPanel({ threadRef, cwd }: MosaicPanelProps) {
                     aria-pressed={variant.path === otherCwd}
                     onClick={() => {
                       choices.setVariant(cwd, variant.path);
-                      setOtherCwd(variant.path);
+                      chooseOther(variant.path);
                       setComparison(null);
                     }}
                   >
