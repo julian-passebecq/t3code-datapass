@@ -1,7 +1,10 @@
-import type {
-  MosaicBuildReceipt,
-  MosaicBuildStatus,
-  MosaicContractState,
+import {
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  AuthTerminalOperateScope,
+  type MosaicBuildReceipt,
+  type MosaicBuildStatus,
+  type MosaicContractState,
 } from "@t3tools/contracts";
 
 export const MOSAIC_STATUS_PRESENTATION: Record<
@@ -114,4 +117,35 @@ export function knownVariantPath(
     variants.some((variant) => !variant.current && variant.path === remembered)
     ? remembered
     : null;
+}
+
+/**
+ * What the panel needs this connection to be allowed to do, in the user's words. The server
+ * rejects a Mosaic call whose session lacks the scope before running anything; the raw error
+ * only names the scope token.
+ */
+const MOSAIC_DENIED_SCOPE_TEXT: Readonly<Record<string, string>> = {
+  [AuthTerminalOperateScope]:
+    "This connection is not allowed to run commands, so it cannot build. Builds run the project's own build script, like a terminal command. Pair a client with terminal access to build here.",
+  [AuthOrchestrationOperateScope]:
+    "This connection is read-only, so it cannot open previews. Pair a client with operate access to open them here.",
+  [AuthOrchestrationReadScope]: "This connection is not allowed to read this project.",
+};
+
+/** The text the panel shows for a failed Mosaic call. */
+export function mosaicFailureText(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const tagged = error as { readonly _tag?: unknown; readonly requiredScope?: unknown };
+    if (
+      tagged._tag === "EnvironmentAuthorizationError" &&
+      typeof tagged.requiredScope === "string"
+    ) {
+      return (
+        MOSAIC_DENIED_SCOPE_TEXT[tagged.requiredScope] ??
+        `This connection is missing the ${tagged.requiredScope} permission.`
+      );
+    }
+    if ("message" in error) return String((error as { readonly message: unknown }).message);
+  }
+  return "Something went wrong.";
 }

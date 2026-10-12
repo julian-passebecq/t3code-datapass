@@ -3,6 +3,9 @@ import {
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
+  AuthTerminalOperateScope,
+  type AuthEnvironmentScope,
+  MosaicError,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -163,6 +166,84 @@ describe("RPC scope middleware", () => {
         requiredScope: AuthOrchestrationOperateScope,
       });
       expect(handled).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("Mosaic build authorization", () => {
+  const tested = [WS_METHODS.mosaicBuild, WS_METHODS.mosaicInspectClient] as const;
+  const group = WsRpcGroup.omit(
+    ...[...WsRpcGroup.requests.keys()].filter(
+      (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
+        !(tested as ReadonlyArray<string>).includes(tag),
+    ),
+  );
+  const input = { cwd: "/repo", clientId: "demo" };
+
+  it("treats a build like a terminal command and the rest of the panel like a thread", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.mosaicBuild)).toBe(AuthTerminalOperateScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.mosaicInspect)).toBe(AuthOrchestrationReadScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.mosaicInspectClient)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.mosaicCompare)).toBe(AuthOrchestrationReadScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.mosaicOpenPreview)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
+  const clientWith = (scopes: ReadonlyArray<AuthEnvironmentScope>, ran: Array<string>) =>
+    RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(WS_METHODS.mosaicBuild, () =>
+            Effect.sync(() => ran.push("build")).pipe(
+              Effect.andThen(Effect.fail(new MosaicError({ failure: "build-in-progress" }))),
+            ),
+          ),
+          group.toLayerHandler(WS_METHODS.mosaicInspectClient, () =>
+            Effect.sync(() => ran.push("inspect")).pipe(
+              Effect.andThen(Effect.fail(new MosaicError({ failure: "not-built" }))),
+            ),
+          ),
+          RpcAuthorization.layer(scopes),
+        ),
+      ),
+    );
+
+  it.effect("refuses a build without terminal access before the build script runs", () =>
+    Effect.gen(function* () {
+      const ran: Array<string> = [];
+      const client = yield* clientWith(
+        [AuthOrchestrationReadScope, AuthOrchestrationOperateScope],
+        ran,
+      );
+
+      expect(yield* client[WS_METHODS.mosaicBuild](input).pipe(Effect.flip)).toMatchObject({
+        _tag: "EnvironmentAuthorizationError",
+        requiredScope: AuthTerminalOperateScope,
+      });
+      // The same connection can still read the panel.
+      expect(yield* client[WS_METHODS.mosaicInspectClient](input).pipe(Effect.flip)).toMatchObject(
+        { _tag: "MosaicError", failure: "not-built" },
+      );
+      expect(ran).toEqual(["inspect"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("runs the build handler for a connection with terminal access", () =>
+    Effect.gen(function* () {
+      const ran: Array<string> = [];
+      const client = yield* clientWith(
+        [AuthOrchestrationReadScope, AuthOrchestrationOperateScope, AuthTerminalOperateScope],
+        ran,
+      );
+
+      expect(yield* client[WS_METHODS.mosaicBuild](input).pipe(Effect.flip)).toMatchObject({
+        _tag: "MosaicError",
+        failure: "build-in-progress",
+      });
+      expect(ran).toEqual(["build"]);
     }).pipe(Effect.scoped),
   );
 });

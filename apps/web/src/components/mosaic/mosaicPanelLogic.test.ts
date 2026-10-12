@@ -1,7 +1,18 @@
-import type { MosaicBuildReceipt, MosaicContractState } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+  type MosaicBuildReceipt,
+  type MosaicContractState,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { initialClientId, knownVariantPath, previewAction, variantLabel } from "./mosaicPanelLogic";
+import {
+  initialClientId,
+  knownVariantPath,
+  mosaicFailureText,
+  previewAction,
+  variantLabel,
+} from "./mosaicPanelLogic";
 
 const receipt = (
   status: MosaicBuildReceipt["status"],
@@ -97,5 +108,36 @@ describe("knownVariantPath", () => {
     expect(knownVariantPath(variants, "/repo")).toBeNull();
     expect(knownVariantPath(variants, "/elsewhere")).toBeNull();
     expect(knownVariantPath(variants, null)).toBeNull();
+  });
+});
+
+describe("mosaicFailureText", () => {
+  const denied = (requiredScope: string) => ({
+    _tag: "EnvironmentAuthorizationError",
+    message: `The authenticated token is missing required scope: ${requiredScope}.`,
+    requiredScope,
+  });
+
+  it("explains a refused build instead of naming the scope token", () => {
+    const text = mosaicFailureText(denied(AuthTerminalOperateScope));
+    expect(text).toContain("cannot build");
+    expect(text).toContain("terminal access");
+    expect(text).not.toContain(AuthTerminalOperateScope);
+  });
+
+  it("explains a refused preview on a read-only connection", () => {
+    expect(mosaicFailureText(denied(AuthOrchestrationOperateScope))).toContain(
+      "cannot open previews",
+    );
+  });
+
+  it("names an unexpected scope and passes other failures through", () => {
+    expect(mosaicFailureText(denied("relay:write"))).toBe(
+      "This connection is missing the relay:write permission.",
+    );
+    expect(mosaicFailureText(new Error("Build this client before previewing it."))).toBe(
+      "Build this client before previewing it.",
+    );
+    expect(mosaicFailureText(undefined)).toBe("Something went wrong.");
   });
 });
