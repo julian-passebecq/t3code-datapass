@@ -161,6 +161,27 @@ describe("MosaicPreviewHost", () => {
     }).pipe(Effect.provide(MosaicPreviewHost.layer)),
   );
 
+  it.effect("closes the least recently opened preview when too many are open", () =>
+    Effect.gen(function* () {
+      const host = yield* MosaicPreviewHost.MosaicPreviewHost;
+      const outputs = Array.from({ length: MosaicPreviewHost.MAX_SERVERS + 1 }, (_, index) =>
+        makeRoot({ "index.html": `<h1>${index}</h1>` }),
+      );
+      const origins: string[] = [];
+      for (const root of outputs.slice(0, MosaicPreviewHost.MAX_SERVERS)) {
+        origins.push(yield* host.serve(root));
+      }
+      // Reopening the first preview keeps it; the next new one closes the second instead.
+      expect(yield* host.serve(outputs[0]!)).toBe(origins[0]);
+      yield* host.serve(outputs[MosaicPreviewHost.MAX_SERVERS]!);
+
+      const kept = yield* Effect.promise(() => fetch(`${origins[0]}/`).then((r) => r.text()));
+      expect(kept).toBe("<h1>0</h1>");
+      expect(yield* host.serve(outputs[0]!)).toBe(origins[0]);
+      expect(yield* host.serve(outputs[1]!)).not.toBe(origins[1]);
+    }).pipe(Effect.provide(MosaicPreviewHost.layer)),
+  );
+
   it.effect("serves the assets a client build needs with their content types", () =>
     Effect.gen(function* () {
       const host = yield* MosaicPreviewHost.MosaicPreviewHost;
