@@ -1,7 +1,10 @@
-import type {
-  MosaicBuildReceipt,
-  MosaicBuildStatus,
-  MosaicContractState,
+import {
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  AuthTerminalOperateScope,
+  type MosaicBuildReceipt,
+  type MosaicBuildStatus,
+  type MosaicContractState,
 } from "@t3tools/contracts";
 
 export const MOSAIC_STATUS_PRESENTATION: Record<
@@ -90,4 +93,76 @@ export function variantLabel(variant: { readonly path: string; readonly branch: 
       .split(/[\\/]/)
       .pop() ?? variant.path;
   return variant.branch === null ? `${name} (detached)` : `${name} · ${variant.branch}`;
+}
+
+/**
+ * The client to show when the panel loads or reloads. A remembered choice that still exists
+ * wins; a project with a single client needs no choice; with several, the user picks, so a
+ * build or preview never runs against a client nobody chose.
+ */
+export function initialClientId(
+  clients: ReadonlyArray<{ readonly id: string }>,
+  remembered: string | null | undefined,
+): string | null {
+  if (remembered != null && clients.some((client) => client.id === remembered)) return remembered;
+  return clients.length === 1 ? clients[0]!.id : null;
+}
+
+/** A remembered compare target, kept only while it is still one of the checkout's variants. */
+export function knownVariantPath(
+  variants: ReadonlyArray<{ readonly path: string; readonly current: boolean }>,
+  remembered: string | null | undefined,
+): string | null {
+  return remembered != null &&
+    variants.some((variant) => !variant.current && variant.path === remembered)
+    ? remembered
+    : null;
+}
+
+/**
+ * What the panel needs this connection to be allowed to do, in the user's words. The server
+ * rejects a Mosaic call whose session lacks the scope before running anything; the raw error
+ * only names the scope token.
+ */
+const MOSAIC_DENIED_SCOPE_TEXT: Readonly<Record<string, string>> = {
+  [AuthTerminalOperateScope]:
+    "This connection is not allowed to run commands, so it cannot build. Builds run the project's own build script, like a terminal command. Pair a client with terminal access to build here.",
+  [AuthOrchestrationOperateScope]:
+    "This connection is read-only, so it cannot open previews. Pair a client with operate access to open them here.",
+  [AuthOrchestrationReadScope]: "This connection is not allowed to read this project.",
+};
+
+/** The text the panel shows for a failed Mosaic call. */
+export function mosaicFailureText(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const tagged = error as { readonly _tag?: unknown; readonly requiredScope?: unknown };
+    if (
+      tagged._tag === "EnvironmentAuthorizationError" &&
+      typeof tagged.requiredScope === "string"
+    ) {
+      return (
+        MOSAIC_DENIED_SCOPE_TEXT[tagged.requiredScope] ??
+        `This connection is missing the ${tagged.requiredScope} permission.`
+      );
+    }
+    if ("message" in error) return String((error as { readonly message: unknown }).message);
+  }
+  return "Something went wrong.";
+}
+
+/** What the panel was showing when an action started, or is showing now. */
+export interface MosaicSelection {
+  readonly clientId: string | null;
+  /** The compare target; only checked for results that depend on it. */
+  readonly otherCwd?: string | null;
+}
+
+/**
+ * Whether the result of an action that started for `started` may still be shown. Builds and
+ * previews can take minutes and the client and compare buttons stay usable meanwhile; a late
+ * result for a client or variant the user has since left must not appear under the new one.
+ */
+export function stillSelected(started: MosaicSelection, current: MosaicSelection): boolean {
+  if (started.clientId === null || started.clientId !== current.clientId) return false;
+  return started.otherCwd === undefined || started.otherCwd === current.otherCwd;
 }

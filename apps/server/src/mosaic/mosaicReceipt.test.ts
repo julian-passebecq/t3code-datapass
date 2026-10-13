@@ -96,11 +96,61 @@ describe("summarizeContractDocument", () => {
       "version is not 1",
       "missing title",
       "missing provenance",
+      "missing note",
       "missing layers",
       "missing domains",
       "missing nodes",
       "missing flows",
     ]);
+  });
+
+  // datapass.concept-spec v1 declares provenance as a string, unlike datapass.artifact.
+  const concept = (provenance: unknown) => ({
+    format: "datapass.concept-spec",
+    version: 1,
+    id: "orchard-planner",
+    title: "Orchard planner (synthetic)",
+    provenance,
+    note: "Synthetic fixture.",
+    layers: [],
+    domains: [],
+    nodes: [],
+    flows: [],
+  });
+
+  it("accepts a valid concept spec with string provenance", () => {
+    for (const kind of ["synthetic", "documented"]) {
+      expect(summarizeContractDocument("specs/orchard.concept.json", concept(kind))).toEqual({
+        path: "specs/orchard.concept.json",
+        format: "datapass.concept-spec",
+        id: "orchard-planner",
+        title: "Orchard planner (synthetic)",
+        provenanceKind: kind,
+        provenanceSource: null,
+        problems: [],
+      });
+    }
+  });
+
+  it("rejects concept provenance that is not one of the spec's strings", () => {
+    for (const provenance of [{ kind: "synthetic", source: "x" }, "computed", 1, null]) {
+      const summary = summarizeContractDocument("specs/x.concept.json", concept(provenance));
+      expect(summary?.problems).toEqual(["provenance is not synthetic or documented"]);
+      expect(summary?.provenanceKind).toBeNull();
+    }
+  });
+
+  it("still requires object provenance on an artifact", () => {
+    const summary = summarizeContractDocument("artifacts/a.json", {
+      format: "datapass.artifact",
+      version: 1,
+      id: "a",
+      title: "A",
+      provenance: "synthetic",
+      payload: {},
+      representations: [],
+    });
+    expect(summary?.problems).toEqual(["missing provenance"]);
   });
 
   it("ignores JSON that claims no Mosaic contract", () => {

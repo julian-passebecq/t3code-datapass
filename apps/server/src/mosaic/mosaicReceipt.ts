@@ -48,19 +48,14 @@ export function summarizeContractDocument(
       problems.push(`missing ${field}`);
     }
   }
-  const provenance = isRecord(document.provenance) ? document.provenance : undefined;
-  if (provenance === undefined) {
-    problems.push("missing provenance");
-  } else if (format === "datapass.artifact") {
-    if (typeof provenance.kind !== "string" || !PROVENANCE_KINDS.has(provenance.kind)) {
-      problems.push("provenance.kind is not synthetic, provided or computed");
-    }
-    if (typeof provenance.source !== "string") problems.push("missing provenance.source");
-  }
+  const { provenanceKind, provenanceSource } =
+    format === "datapass.artifact"
+      ? artifactProvenance(document.provenance, problems)
+      : conceptProvenance(document.provenance, problems);
   const required =
     format === "datapass.artifact"
       ? (["payload", "representations"] as const)
-      : (["layers", "domains", "nodes", "flows"] as const);
+      : (["note", "layers", "domains", "nodes", "flows"] as const);
   for (const field of required) {
     if (document[field] === undefined) problems.push(`missing ${field}`);
   }
@@ -70,10 +65,43 @@ export function summarizeContractDocument(
     format,
     id: stringOrNull(document.id),
     title: stringOrNull(document.title),
-    provenanceKind: stringOrNull(provenance?.kind),
-    provenanceSource: stringOrNull(provenance?.source),
+    provenanceKind,
+    provenanceSource,
     problems,
   };
+}
+
+interface ProvenanceSummary {
+  readonly provenanceKind: string | null;
+  readonly provenanceSource: string | null;
+}
+
+/** `datapass.artifact` v1: `provenance` is an object `{kind, source, ...}`. */
+function artifactProvenance(value: unknown, problems: string[]): ProvenanceSummary {
+  if (!isRecord(value)) {
+    problems.push("missing provenance");
+    return { provenanceKind: null, provenanceSource: null };
+  }
+  if (typeof value.kind !== "string" || !PROVENANCE_KINDS.has(value.kind)) {
+    problems.push("provenance.kind is not synthetic, provided or computed");
+  }
+  if (typeof value.source !== "string") problems.push("missing provenance.source");
+  return { provenanceKind: stringOrNull(value.kind), provenanceSource: stringOrNull(value.source) };
+}
+
+const CONCEPT_PROVENANCE = new Set(["synthetic", "documented"]);
+
+/** `datapass.concept-spec` v1: `provenance` is the string `synthetic` or `documented`. */
+function conceptProvenance(value: unknown, problems: string[]): ProvenanceSummary {
+  if (value === undefined) {
+    problems.push("missing provenance");
+    return { provenanceKind: null, provenanceSource: null };
+  }
+  if (typeof value !== "string" || !CONCEPT_PROVENANCE.has(value)) {
+    problems.push("provenance is not synthetic or documented");
+    return { provenanceKind: null, provenanceSource: null };
+  }
+  return { provenanceKind: value, provenanceSource: null };
 }
 
 /** A contract file too large or not JSON is still listed, so it is not silently dropped. */

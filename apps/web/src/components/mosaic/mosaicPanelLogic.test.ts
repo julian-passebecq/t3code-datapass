@@ -1,7 +1,19 @@
-import type { MosaicBuildReceipt, MosaicContractState } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+  type MosaicBuildReceipt,
+  type MosaicContractState,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { previewAction, variantLabel } from "./mosaicPanelLogic";
+import {
+  initialClientId,
+  knownVariantPath,
+  mosaicFailureText,
+  previewAction,
+  stillSelected,
+  variantLabel,
+} from "./mosaicPanelLogic";
 
 const receipt = (
   status: MosaicBuildReceipt["status"],
@@ -63,5 +75,94 @@ describe("variantLabel", () => {
       "blue · feat/blue",
     );
     expect(variantLabel({ path: "/repo", branch: null })).toBe("repo (detached)");
+  });
+});
+
+describe("initialClientId", () => {
+  const clients = [{ id: "animated-coding-lab" }, { id: "foundation-reference" }];
+
+  it("never picks one of several clients on its own", () => {
+    expect(initialClientId(clients, null)).toBeNull();
+    expect(initialClientId(clients, undefined)).toBeNull();
+  });
+
+  it("keeps a remembered choice across reloads and drops one that disappeared", () => {
+    expect(initialClientId(clients, "foundation-reference")).toBe("foundation-reference");
+    expect(initialClientId(clients, "../outside")).toBeNull();
+    expect(initialClientId([{ id: "only" }], "gone")).toBe("only");
+  });
+
+  it("selects the only client and nothing when there is none", () => {
+    expect(initialClientId([{ id: "only" }], null)).toBe("only");
+    expect(initialClientId([], "foundation-reference")).toBeNull();
+  });
+});
+
+describe("knownVariantPath", () => {
+  const variants = [
+    { path: "/repo", current: true },
+    { path: "/repo-b", current: false },
+  ];
+
+  it("keeps a remembered compare target only while it is another variant", () => {
+    expect(knownVariantPath(variants, "/repo-b")).toBe("/repo-b");
+    expect(knownVariantPath(variants, "/repo")).toBeNull();
+    expect(knownVariantPath(variants, "/elsewhere")).toBeNull();
+    expect(knownVariantPath(variants, null)).toBeNull();
+  });
+});
+
+describe("mosaicFailureText", () => {
+  const denied = (requiredScope: string) => ({
+    _tag: "EnvironmentAuthorizationError",
+    message: `The authenticated token is missing required scope: ${requiredScope}.`,
+    requiredScope,
+  });
+
+  it("explains a refused build instead of naming the scope token", () => {
+    const text = mosaicFailureText(denied(AuthTerminalOperateScope));
+    expect(text).toContain("cannot build");
+    expect(text).toContain("terminal access");
+    expect(text).not.toContain(AuthTerminalOperateScope);
+  });
+
+  it("explains a refused preview on a read-only connection", () => {
+    expect(mosaicFailureText(denied(AuthOrchestrationOperateScope))).toContain(
+      "cannot open previews",
+    );
+  });
+
+  it("names an unexpected scope and passes other failures through", () => {
+    expect(mosaicFailureText(denied("relay:write"))).toBe(
+      "This connection is missing the relay:write permission.",
+    );
+    expect(mosaicFailureText(new Error("Build this client before previewing it."))).toBe(
+      "Build this client before previewing it.",
+    );
+    expect(mosaicFailureText(undefined)).toBe("Something went wrong.");
+  });
+});
+
+describe("stillSelected", () => {
+  it("keeps a result while the same client is selected", () => {
+    expect(stillSelected({ clientId: "a" }, { clientId: "a", otherCwd: "/b" })).toBe(true);
+  });
+
+  it("drops a late result after the user picked another client or cleared the choice", () => {
+    expect(stillSelected({ clientId: "a" }, { clientId: "b" })).toBe(false);
+    expect(stillSelected({ clientId: "a" }, { clientId: null })).toBe(false);
+    expect(stillSelected({ clientId: null }, { clientId: null })).toBe(false);
+  });
+
+  it("drops a late comparison after the compare target changed", () => {
+    expect(
+      stillSelected({ clientId: "a", otherCwd: "/v1" }, { clientId: "a", otherCwd: "/v1" }),
+    ).toBe(true);
+    expect(
+      stillSelected({ clientId: "a", otherCwd: "/v1" }, { clientId: "a", otherCwd: "/v2" }),
+    ).toBe(false);
+    expect(
+      stillSelected({ clientId: "a", otherCwd: "/v1" }, { clientId: "b", otherCwd: "/v1" }),
+    ).toBe(false);
   });
 });

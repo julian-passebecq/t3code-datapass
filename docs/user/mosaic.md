@@ -7,7 +7,10 @@ the app. It is optional: other projects never see it, and the project needs noth
 Open it from the command palette with **Open Mosaic builds and previews**. T3 Code treats a
 folder as a Mosaic project when its `package.json` has a `build:client` script and it has at
 least one `clients/<id>/app.ts`. The panel works on the thread's checkout, so a thread in a
-worktree builds that worktree.
+worktree builds that worktree. When the checkout has several clients, pick one first; the panel
+keeps that choice and the compare target for the checkout across reconnects and page reloads (in
+this browser's storage). A remembered client or worktree that no longer exists is dropped, so the
+panel asks again instead of building something else.
 
 - **Build** runs `npm run build:client -- <id>` in the checkout, exactly as you would from a
   terminal. It needs the same permission as opening a terminal.
