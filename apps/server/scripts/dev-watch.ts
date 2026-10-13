@@ -69,6 +69,8 @@ function runWindowsWatcher(entryArgs: ReadonlyArray<string>): void {
   for (const root of roots) snapshot(root, stamps);
 
   let child: NodeChildProcess.ChildProcess | undefined;
+  // The process being stopped for a restart; the next one starts when it exits.
+  let stopping: NodeChildProcess.ChildProcess | undefined;
   let restartTimer: NodeJS.Timeout | undefined;
   let pendingChange: string | undefined;
 
@@ -87,10 +89,17 @@ function runWindowsWatcher(entryArgs: ReadonlyArray<string>): void {
   const restart = () => {
     console.log(`[dev-watch] Restarting: ${pendingChange} changed`);
     pendingChange = undefined;
+    // A restart is already waiting for the old process to exit; the start it queued
+    // picks up this change too, so a second start here would run two servers.
+    if (stopping) return;
     const previous = child;
     child = undefined;
     if (previous && previous.exitCode === null && previous.signalCode === null) {
-      previous.once("exit", start);
+      stopping = previous;
+      previous.once("exit", () => {
+        stopping = undefined;
+        start();
+      });
       previous.kill();
     } else {
       start();
@@ -114,6 +123,7 @@ function runWindowsWatcher(entryArgs: ReadonlyArray<string>): void {
 
   const stop = () => {
     child?.kill();
+    stopping?.kill();
     process.exit(0);
   };
   process.on("SIGINT", stop);
