@@ -49,7 +49,8 @@ export const DEFAULT_PREVIEW_CSP =
 export const HOST_CEILING_CSP =
   "connect-src 'self'; frame-src 'self'; form-action 'self'; object-src 'none'; base-uri 'self'; sandbox allow-scripts allow-same-origin allow-forms allow-modals allow-downloads";
 
-const MAX_SERVERS = 8;
+/** Previews served at once; opening one more closes the least recently opened. */
+export const MAX_SERVERS = 8;
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -248,12 +249,20 @@ const make = Effect.gen(function* () {
     if (verifiedFiles === undefined) verifiedByRoot.delete(key);
     else verifiedByRoot.set(key, verifiedFiles);
     const existing = servers.get(key);
-    if (existing !== undefined && existing.server.listening) return existing.origin;
+    if (existing !== undefined) {
+      // Map order is the eviction order: reopening a preview makes it the most recent.
+      servers.delete(key);
+      if (existing.server.listening) {
+        servers.set(key, existing);
+        return existing.origin;
+      }
+    }
 
     if (servers.size >= MAX_SERVERS) {
       const [oldestKey, oldest] = servers.entries().next().value!;
       oldest.server.close();
       servers.delete(oldestKey);
+      verifiedByRoot.delete(oldestKey);
     }
 
     let host = "";
